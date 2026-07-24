@@ -1,0 +1,37 @@
+{
+  "name": "oddsx",
+  "version": "1.0.0",
+  "private": true,
+  "packageManager": "pnpm@10.15.0",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "bufferutil",
+      "keccak",
+      "sharp",
+      "unrs-resolver",
+      "utf-8-validate"
+    ]
+  },
+  "scripts": {
+    "dev": "pnpm --filter @oddsx/web dev",
+    "build": "pnpm --filter @oddsx/config build && pnpm --filter @oddsx/web build",
+    "lint": "pnpm -r lint",
+    "test": "pnpm contracts:test",
+    "typecheck": "pnpm -r typecheck",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "contracts:build": "pnpm --filter @oddsx/contracts build",
+    "contracts:test": "pnpm --filter @oddsx/contracts test",
+    "contracts:coverage": "pnpm --filter @oddsx/contracts coverage",
+    "contracts:deploy:local": "pnpm --filter @oddsx/contracts deploy:local",
+    "contracts:deploy:arc-testnet": "pnpm --filter @oddsx/contracts deploy:arc-testnet",
+    "contracts:deploy:sepolia": "pnpm --filter @oddsx/contracts deploy:sepolia"
+  },
+  "devDependencies": {
+    "prettier": "3.6.2",
+    "prettier-plugin-solidity": "2.1.0"
+  }
+}

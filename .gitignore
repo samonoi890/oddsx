@@ -1,0 +1,70 @@
+# Dependencies and package managers
+node_modules/
+.pnpm-store/
+.pnp
+.pnp.*
+.yarn/cache/
+.yarn/unplugged/
+
+# Environment files and secrets
+.env
+.env.*
+**/.env
+**/.env.*
+!.env.example
+!**/.env.example
+*.pem
+*.key
+*.keystore
+*.mnemonic
+
+# Next.js and deployment output
+.next/
+out/
+.vercel/
+
+# TypeScript and JavaScript tooling
+*.tsbuildinfo
+.turbo/
+.cache/
+.eslintcache
+.stylelintcache
+
+# Test and build output
+dist/
+build/
+coverage/
+.nyc_output/
+*.lcov
+lcov.info
+
+# Foundry dependencies and generated artifacts
+packages/contracts/lib/
+packages/contracts/cache/
+packages/contracts/out/
+packages/contracts/broadcast/
+packages/contracts/coverage/
+broadcast/
+cache/
+
+# Generated deployment metadata
+apps/web/public/deployments/*.json
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Operating system and editor artifacts
+.DS_Store
+.AppleDouble
+.LSOverride
+Thumbs.db
+Desktop.ini
+.idea/
+.vscode/
+*.swp
+*.swo
+*~

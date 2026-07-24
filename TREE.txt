@@ -1,0 +1,59 @@
+OddsX/
+├── apps
+│   └── web
+│       ├── src
+│       │   ├── app
+│       │   │   ├── globals.css
+│       │   │   ├── layout.tsx
+│       │   │   └── page.tsx
+│       │   ├── components
+│       │   │   ├── BetForm.tsx
+│       │   │   ├── Header.tsx
+│       │   │   ├── MarketCard.tsx
+│       │   │   └── MarketLookup.tsx
+│       │   ├── hooks
+│       │   │   ├── useMarket.ts
+│       │   │   └── useMarketActions.ts
+│       │   ├── lib
+│       │   │   └── format.ts
+│       │   └── providers
+│       │       └── Web3Provider.tsx
+│       ├── eslint.config.mjs
+│       ├── next-env.d.ts
+│       ├── next.config.ts
+│       ├── package.json
+│       └── tsconfig.json
+├── packages
+│   ├── config
+│   │   ├── src
+│   │   │   ├── abi
+│   │   │   │   └── oddsXAbi.ts
+│   │   │   ├── chains.ts
+│   │   │   ├── contracts.ts
+│   │   │   └── index.ts
+│   │   ├── package.json
+│   │   └── tsconfig.json
+│   └── contracts
+│       ├── script
+│       │   └── DeployOddsX.s.sol
+│       ├── src
+│       │   ├── interfaces
+│       │   │   └── IOddsX.sol
+│       │   ├── mocks
+│       │   │   └── MockERC20.sol
+│       │   └── OddsX.sol
+│       ├── test
+│       │   └── OddsX.t.sol
+│       ├── foundry.toml
+│       ├── package.json
+│       └── remappings.txt
+├── .editorconfig
+├── .env.example
+├── .gitignore
+├── Makefile
+├── package.json
+├── pnpm-workspace.yaml
+├── README.md
+├── setup.sh
+├── TREE.txt
+└── tsconfig.base.json

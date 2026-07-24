@@ -1,0 +1,16 @@
+{
+  "name": "@oddsx/contracts",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build": "forge build",
+    "test": "forge test --offline -vvv",
+    "coverage": "forge coverage",
+    "format": "forge fmt",
+    "lint": "forge fmt --check",
+    "typecheck": "forge build",
+    "deploy:local": "forge script script/DeployOddsX.s.sol:DeployOddsX --rpc-url http://127.0.0.1:8545 --broadcast",
+    "deploy:arc-testnet": "forge script script/DeployOddsX.s.sol:DeployOddsX --rpc-url arc_testnet --broadcast",
+    "deploy:sepolia": "forge script script/DeployOddsX.s.sol:DeployOddsX --rpc-url \"$SEPOLIA_RPC_URL\" --broadcast --verify"
+  }
+}
