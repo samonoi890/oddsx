@@ -1,7 +1,13 @@
 "use client";
 
 import { arcTestnet } from "@oddsx/config";
-import { CalendarClock, CheckCircle2, FlaskConical } from "lucide-react";
+import {
+  CalendarClock,
+  CheckCircle2,
+  FlaskConical,
+  RefreshCw,
+  ShieldAlert,
+} from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import type { Hex } from "viem";
 import { useChainId, useSwitchChain } from "wagmi";
@@ -114,6 +120,12 @@ export function NewMarketModal({
             setValidationError("Choose a future market expiry.");
             return;
           }
+          if (!creation.canCreate) {
+            setValidationError(
+              "Connect an approved market-creator wallet before continuing.",
+            );
+            return;
+          }
           creation.createMarket({
             label: normalizedLabel,
             description: description.trim(),
@@ -172,17 +184,53 @@ export function NewMarketModal({
             )}
           </p>
         ) : null}
+        {creation.roleError ? (
+          <div
+            className="rounded-xl border border-rose-400/15 bg-rose-400/[0.06] px-3 py-3 text-xs text-rose-200"
+            role="alert"
+          >
+            <p className="leading-5">
+              OddsX couldn&apos;t verify market-creator access on Arc. Check the
+              network connection, then try the role check again.
+            </p>
+            <button
+              type="button"
+              className="mt-2 inline-flex items-center gap-2 font-mono text-[10px] font-bold uppercase tracking-wider text-rose-100 transition hover:text-white"
+              onClick={() => void creation.refetchRole()}
+            >
+              <RefreshCw className="size-3" /> Check again
+            </button>
+          </div>
+        ) : null}
 
         {!creation.isConnected ? (
           <p className="text-xs text-amber-200/80">
-            Connect the market-creator wallet to continue.
+            Connect an approved market-creator wallet to continue.
           </p>
-        ) : creation.isCheckingRole ? (
+        ) : creation.roleError ? null : creation.isCheckingRole ? (
           <p className="text-xs text-slate-500">Checking creator role…</p>
         ) : !creation.canCreate ? (
-          <p className="text-xs text-amber-200/80">
-            This wallet does not hold MARKET_CREATOR_ROLE on OddsX.
-          </p>
+          <div className="rounded-xl border border-amber-300/15 bg-amber-300/[0.05] p-3">
+            <div className="flex items-start gap-3">
+              <ShieldAlert className="mt-0.5 size-4 shrink-0 text-amber-300" />
+              <div>
+                <p className="text-xs font-semibold text-amber-100">
+                  This wallet can&apos;t create OddsX markets
+                </p>
+                <p className="mt-1 text-[11px] leading-5 text-amber-100/65">
+                  Connect a wallet with market-creator access, or ask the OddsX
+                  admin to approve this address. Then check again.
+                </p>
+                <button
+                  type="button"
+                  className="mt-2 inline-flex items-center gap-2 font-mono text-[10px] font-bold uppercase tracking-wider text-amber-200 transition hover:text-white"
+                  onClick={() => void creation.refetchRole()}
+                >
+                  <RefreshCw className="size-3" /> Check again
+                </button>
+              </div>
+            </div>
+          </div>
         ) : null}
 
         {creation.transactionHash ? (
@@ -213,7 +261,11 @@ export function NewMarketModal({
               !creation.isConnected || !creation.canCreate || creation.isPending
             }
           >
-            {creation.isPending ? "Confirming on Arc…" : "Create test market"}
+            {creation.isPending
+              ? "Confirming on Arc…"
+              : creation.isConnected && !creation.canCreate
+                ? "Market creator access required"
+                : "Create test market"}
           </button>
         )}
       </form>

@@ -3,15 +3,10 @@
 import { arcTestnet, getOddsXAddress, oddsXAbi } from "@oddsx/config";
 import { useCallback, useEffect, useRef } from "react";
 import { keccak256, stringToHex, zeroAddress, type Hex } from "viem";
-import {
-  useAccount,
-  useReadContract,
-  useWaitForTransactionReceipt,
-  useWriteContract,
-} from "wagmi";
+import { useWaitForTransactionReceipt, useWriteContract } from "wagmi";
+import { useMarketCreatorRole } from "./useMarketCreatorRole";
 
 const contractAddress = getOddsXAddress(arcTestnet.id);
-const MARKET_CREATOR_ROLE = keccak256(stringToHex("MARKET_CREATOR_ROLE"));
 
 interface CreateMarketInput {
   label: string;
@@ -22,17 +17,10 @@ interface CreateMarketInput {
 export function useCreateMarket(
   onConfirmed?: (marketId: Hex, label: string) => void,
 ) {
-  const { address, isConnected } = useAccount();
+  const creatorRole = useMarketCreatorRole();
+  const { address } = creatorRole;
   const pendingMarket = useRef<{ id: Hex; label: string } | null>(null);
   const handledHash = useRef<Hex | undefined>(undefined);
-  const role = useReadContract({
-    address: contractAddress,
-    abi: oddsXAbi,
-    functionName: "hasRole",
-    args: address ? [MARKET_CREATOR_ROLE, address] : undefined,
-    chainId: arcTestnet.id,
-    query: { enabled: Boolean(address) },
-  });
   const write = useWriteContract();
   const { writeContract } = write;
   const receipt = useWaitForTransactionReceipt({
@@ -57,6 +45,9 @@ export function useCreateMarket(
   const createMarket = useCallback(
     ({ label, description, endTime }: CreateMarketInput) => {
       if (!address) throw new Error("Connect a wallet to create a market.");
+      if (!creatorRole.canCreate) {
+        throw new Error("This wallet is not approved to create markets.");
+      }
       const marketId = keccak256(stringToHex(label));
       pendingMarket.current = { id: marketId, label };
       writeContract({
@@ -68,16 +59,18 @@ export function useCreateMarket(
       });
       return marketId;
     },
-    [address, writeContract],
+    [address, creatorRole.canCreate, writeContract],
   );
 
   return {
     createMarket,
-    isConnected,
-    isCheckingRole: role.isLoading,
-    canCreate: role.data === true,
+    isConnected: creatorRole.isConnected,
+    isCheckingRole: creatorRole.isCheckingRole,
+    canCreate: creatorRole.canCreate,
+    roleError: creatorRole.roleError,
+    refetchRole: creatorRole.refetchRole,
     transactionHash: write.data,
     isPending: write.isPending || receipt.isLoading,
-    error: role.error ?? write.error ?? receipt.error,
+    error: write.error ?? receipt.error,
   };
 }

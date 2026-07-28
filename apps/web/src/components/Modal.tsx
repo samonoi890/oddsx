@@ -3,7 +3,8 @@
 
 import { AnimatePresence, motion } from "framer-motion";
 import { X } from "lucide-react";
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 
 const FOCUSABLE_SELECTOR =
   'button:not([disabled]), a[href], input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
@@ -18,6 +19,11 @@ interface ModalProps {
 
 export function Modal({ open, onClose, title, eyebrow, children }: ModalProps) {
   const dialogRef = useRef<HTMLDivElement>(null);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -63,11 +69,13 @@ export function Modal({ open, onClose, title, eyebrow, children }: ModalProps) {
     };
   }, [onClose, open]);
 
-  return (
+  if (!mounted) return null;
+
+  return createPortal(
     <AnimatePresence>
       {open ? (
         <motion.div
-          className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/80 p-0 backdrop-blur-md sm:items-center sm:p-6"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4 backdrop-blur-md sm:p-6"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
@@ -81,7 +89,7 @@ export function Modal({ open, onClose, title, eyebrow, children }: ModalProps) {
             aria-modal="true"
             aria-labelledby="modal-title"
             tabIndex={-1}
-            className="glass-panel relative max-h-[92vh] w-full overflow-y-auto rounded-t-[28px] border-white/10 p-5 sm:max-w-xl sm:rounded-[28px] sm:p-7"
+            className="glass-panel relative max-h-[calc(100dvh-2rem)] w-full max-w-xl overflow-y-auto rounded-[28px] border-white/10 p-5 sm:max-h-[92vh] sm:p-7"
             initial={{ opacity: 0, y: 28, scale: 0.98 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 20, scale: 0.98 }}
@@ -110,6 +118,7 @@ export function Modal({ open, onClose, title, eyebrow, children }: ModalProps) {
           </motion.div>
         </motion.div>
       ) : null}
-    </AnimatePresence>
+    </AnimatePresence>,
+    document.body,
   );
 }

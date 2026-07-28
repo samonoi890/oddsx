@@ -2,14 +2,10 @@
 "use client";
 
 import { arcTestnet, getOddsXAddress, oddsXAbi } from "@oddsx/config";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { Address, Hex } from "viem";
-import { usePublicClient, useWatchContractEvent } from "wagmi";
-import {
-  getRecentEventFromBlock,
-  getRpcErrorState,
-  RPC_RATE_LIMIT_RETRY_MS,
-} from "@/lib/rpc";
+import { usePublicClient } from "wagmi";
+import { getRecentEventFromBlock, getRpcErrorState } from "@/lib/rpc";
 
 export interface ProtocolBet {
   id: string;
@@ -23,6 +19,7 @@ export interface ProtocolBet {
 }
 
 const contractAddress = getOddsXAddress(arcTestnet.id);
+const ACTIVITY_POLL_INTERVAL_MS = 12_000;
 
 function normalizeBetLogs(
   logs: readonly {
@@ -82,73 +79,68 @@ export function useProtocolActivity() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
   const [isRateLimited, setIsRateLimited] = useState(false);
+  const lastSyncedBlock = useRef<bigint | null>(null);
+  const isSyncing = useRef(false);
 
-  const loadHistory = useCallback(async () => {
-    if (!publicClient) return;
-    setIsLoading(true);
+  const syncActivity = useCallback(async () => {
+    if (!publicClient || isSyncing.current) return;
+    isSyncing.current = true;
     try {
       const latestBlock = await publicClient.getBlockNumber();
-      const logs = await publicClient.getContractEvents({
-        address: contractAddress,
-        abi: oddsXAbi,
-        eventName: "BetPlaced",
-        fromBlock: getRecentEventFromBlock(latestBlock),
-        toBlock: latestBlock,
-        strict: true,
-      });
+      const fromBlock =
+        lastSyncedBlock.current === null
+          ? getRecentEventFromBlock(latestBlock)
+          : lastSyncedBlock.current + 1n;
+      const logs =
+        fromBlock <= latestBlock
+          ? await publicClient.getContractEvents({
+              address: contractAddress,
+              abi: oddsXAbi,
+              eventName: "BetPlaced",
+              fromBlock,
+              toBlock: latestBlock,
+              strict: true,
+            })
+          : [];
       setBets((current) => mergeBets(current, normalizeBetLogs(logs)));
+      lastSyncedBlock.current = latestBlock;
       setError(null);
       setIsRateLimited(false);
     } catch (caught) {
       const rpcError = getRpcErrorState(
         caught,
-        "Live activity is temporarily unavailable. Please try again shortly.",
+        "Live activity lost its connection to Arc. Retrying automatically.",
       );
       setError(rpcError.error);
       setIsRateLimited(rpcError.isRateLimited);
     } finally {
       setIsLoading(false);
+      isSyncing.current = false;
     }
   }, [publicClient]);
 
   useEffect(() => {
-    void loadHistory();
-  }, [loadHistory]);
+    void syncActivity();
+    const pollTimer = window.setInterval(() => {
+      void syncActivity();
+    }, ACTIVITY_POLL_INTERVAL_MS);
+    const handleOnline = () => void syncActivity();
+    window.addEventListener("online", handleOnline);
+    return () => {
+      window.clearInterval(pollTimer);
+      window.removeEventListener("online", handleOnline);
+    };
+  }, [syncActivity]);
 
-  useEffect(() => {
-    if (!error) return;
-    const retryTimer = window.setInterval(() => {
-      void loadHistory();
-    }, RPC_RATE_LIMIT_RETRY_MS);
-    return () => window.clearInterval(retryTimer);
-  }, [error, loadHistory]);
-
-  useWatchContractEvent({
-    address: contractAddress,
-    abi: oddsXAbi,
-    eventName: "BetPlaced",
-    chainId: arcTestnet.id,
-    strict: true,
-    enabled: !isRateLimited,
-    onLogs(logs) {
-      setBets((current) => mergeBets(current, normalizeBetLogs(logs)));
-      setError(null);
-      setIsRateLimited(false);
-    },
-    onError(caught) {
-      const rpcError = getRpcErrorState(
-        caught,
-        "Live activity is temporarily unavailable. Please try again shortly.",
-      );
-      setError(rpcError.error);
-      setIsRateLimited(rpcError.isRateLimited);
-    },
-  });
+  const retry = useCallback(() => {
+    void syncActivity();
+  }, [syncActivity]);
 
   return {
     bets,
     isLoading,
     error,
     isRateLimited,
+    retry,
   };
 }

@@ -7,6 +7,7 @@ import {
   Blocks,
   CircleDollarSign,
   Plus,
+  ShieldAlert,
   ShieldCheck,
 } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
@@ -19,6 +20,7 @@ import { MarketLookup } from "./MarketLookup";
 import { NewMarketModal } from "./NewMarketModal";
 import { Portfolio } from "./Portfolio";
 import { useFeaturedMarkets } from "@/hooks/useFeaturedMarkets";
+import { useMarketCreatorRole } from "@/hooks/useMarketCreatorRole";
 import { useProtocolActivity } from "@/hooks/useProtocolActivity";
 import { formatUsdc } from "@/lib/format";
 import { DEFAULT_MARKET } from "@/lib/marketCatalog";
@@ -29,6 +31,7 @@ export function Dashboard() {
   const [isNewMarketOpen, setIsNewMarketOpen] = useState(false);
   const activity = useProtocolActivity();
   const featured = useFeaturedMarkets();
+  const creatorRole = useMarketCreatorRole();
 
   const changeMarket = useCallback((nextMarketId: Hex, label: string) => {
     setMarketId(nextMarketId);
@@ -114,14 +117,29 @@ export function Dashboard() {
               <div className="min-w-0 flex-1">
                 <MarketLookup onMarketChange={changeMarket} />
               </div>
-              <button
-                type="button"
-                className="soft-button shrink-0 px-3 sm:px-4"
-                onClick={() => setIsNewMarketOpen(true)}
-              >
-                <Plus className="size-4 text-cyan-300" />
-                <span className="hidden sm:inline">New Market</span>
-              </button>
+              {creatorRole.isConnected && creatorRole.canCreate ? (
+                <button
+                  type="button"
+                  className="soft-button shrink-0 px-3 sm:px-4"
+                  onClick={() => setIsNewMarketOpen(true)}
+                >
+                  <Plus className="size-4 text-cyan-300" />
+                  <span className="hidden sm:inline">New Market</span>
+                </button>
+              ) : creatorRole.isConnected &&
+                !creatorRole.isCheckingRole &&
+                !creatorRole.roleError ? (
+                <span
+                  className="inline-flex shrink-0 items-center gap-2 rounded-xl border border-amber-300/10 bg-amber-300/[0.035] px-3 py-2 text-[10px] font-semibold text-amber-100/75 sm:px-4"
+                  title="This wallet is not approved to create OddsX markets."
+                >
+                  <ShieldAlert className="size-3.5 text-amber-300/75" />
+                  <span className="hidden sm:inline">
+                    Market creation restricted
+                  </span>
+                  <span className="sm:hidden">Restricted</span>
+                </span>
+              ) : null}
             </div>
           </div>
           <HowItWorks />
@@ -143,6 +161,7 @@ export function Dashboard() {
               isLoading={activity.isLoading}
               error={activity.error}
               isRateLimited={activity.isRateLimited}
+              onRetry={activity.retry}
             />
           </div>
         </section>
