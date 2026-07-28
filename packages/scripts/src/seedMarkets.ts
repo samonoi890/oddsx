@@ -11,7 +11,13 @@
 // The script is idempotent: markets that already exist on-chain are detected
 // via the `MarketAlreadyExists` revert and skipped, so it is safe to re-run.
 
-import "dotenv/config";
+// ./env MUST be imported first: it loads the .env files (including
+// apps/web/.env.local) before any other module reads process.env.
+import {
+  loadedEnvFiles,
+  requireEnv,
+  sanitizePrivateKey,
+} from "./env";
 
 import { oddsXAbi, arcTestnet } from "@oddsx/config";
 import {
@@ -114,24 +120,6 @@ const MARKETS: SeedMarket[] = [
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-function requireEnv(name: string): string {
-  const value = process.env[name]?.trim();
-  if (!value) {
-    throw new Error(`Missing required environment variable: ${name}`);
-  }
-  return value;
-}
-
-function normalizePrivateKey(raw: string): Hex {
-  const prefixed = (raw.startsWith("0x") ? raw : `0x${raw}`) as Hex;
-  if (!/^0x[0-9a-fA-F]{64}$/.test(prefixed)) {
-    throw new Error(
-      "ADMIN_PRIVATE_KEY must be a 32-byte hex private key (64 hex chars).",
-    );
-  }
-  return prefixed;
-}
-
 function marketIdFor(label: string): Hex {
   return keccak256(stringToHex(label));
 }
@@ -186,7 +174,13 @@ async function main(): Promise<void> {
     process.env.ARC_TESTNET_RPC_URL?.trim() ||
     "https://rpc.testnet.arc.network";
   const account = privateKeyToAccount(
-    normalizePrivateKey(requireEnv("ADMIN_PRIVATE_KEY")),
+    sanitizePrivateKey(requireEnv("ADMIN_PRIVATE_KEY")),
+  );
+
+  console.log(
+    loadedEnvFiles.length > 0
+      ? `Loaded env from: ${loadedEnvFiles.join(", ")}`
+      : "No .env file found; relying on shell environment variables.",
   );
 
   const contractAddress = (process.env.ODDSX_ADDRESS?.trim() ||

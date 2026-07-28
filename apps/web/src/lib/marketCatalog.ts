@@ -1,17 +1,20 @@
 import type { Hex } from "viem";
 
+// keccak256(stringToHex("ETH_ABOVE_5000_Q4_2026")) — one of the seeded markets
+// created by packages/scripts/src/seedMarkets.ts on the current deployment.
 export const DEFAULT_MARKET = {
-  label: "ETH_ABOVE_5000",
-  id: "0x930d9354f76a92946a5f55c30b630e702250e5a2bc1b30c0099edc93729ce5f5" as Hex,
+  label: "ETH_ABOVE_5000_Q4_2026",
+  id: "0xa2ac8629241bcc942523f7fed05149ab9387badfbfb7678435603dfa3eee40b9" as Hex,
 } as const;
 
 export const TEST_MARKET_TEMPLATES = [
   {
-    label: "BTC_ABOVE_100000",
-    description: "Will BTC trade above 100,000 USDC at market expiry?",
+    label: "BTC_NEW_ATH_2026",
+    description:
+      "Will Bitcoin reach a new All-Time High above $120,000 in 2026?",
   },
   {
-    label: "SOL_ABOVE_300",
-    description: "Will SOL trade above 300 USDC at market expiry?",
+    label: "SOL_ETH_FLIP_2026",
+    description: "Will Solana market cap flip Ethereum at any point in 2026?",
   },
 ] as const;
