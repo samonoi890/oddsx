@@ -1,0 +1,18 @@
+{
+  "name": "@oddsx/scripts",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "seed": "tsx src/seedMarkets.ts"
+  },
+  "dependencies": {
+    "@oddsx/config": "workspace:*",
+    "viem": "2.37.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "dotenv": "^16.4.7",
+    "tsx": "^4.19.2"
+  }
+}
