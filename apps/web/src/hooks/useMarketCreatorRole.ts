@@ -19,8 +19,8 @@ export function useMarketCreatorRole() {
     chainId: arcTestnet.id,
     query: {
       enabled: Boolean(address),
-      staleTime: 12_000,
-      refetchInterval: 12_000,
+      staleTime: 30_000,
+      refetchInterval: 30_000,
     },
   });
 

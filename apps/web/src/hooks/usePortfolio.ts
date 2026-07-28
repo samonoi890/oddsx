@@ -60,7 +60,7 @@ export function usePortfolio(marketId: Hex) {
         args: [marketId, account],
       },
     ],
-    query: { enabled: Boolean(address), refetchInterval: 12_000 },
+    query: { enabled: Boolean(address), refetchInterval: 30_000 },
   });
   const { refetch: refetchSelectedPosition } = selectedPosition;
 

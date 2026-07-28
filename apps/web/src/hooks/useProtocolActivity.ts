@@ -19,7 +19,7 @@ export interface ProtocolBet {
 }
 
 const contractAddress = getOddsXAddress(arcTestnet.id);
-const ACTIVITY_POLL_INTERVAL_MS = 12_000;
+const ACTIVITY_POLL_INTERVAL_MS = 30_000;
 
 function normalizeBetLogs(
   logs: readonly {

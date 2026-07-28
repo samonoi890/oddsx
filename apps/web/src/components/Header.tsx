@@ -16,6 +16,7 @@ import {
   useSwitchChain,
 } from "wagmi";
 import { getSafeErrorMessage } from "@/lib/errors";
+import { isRpcRateLimitError } from "@/lib/rpc";
 import { shortenAddress } from "@/lib/format";
 import { WalletConnectModal } from "./WalletConnectModal";
 
@@ -37,8 +38,13 @@ export function Header() {
   const balance = useBalance({ address, chainId: arcTestnet.id });
   const arcBlock = useBlockNumber({
     chainId: arcTestnet.id,
-    query: { refetchInterval: 12_000 },
+    query: { refetchInterval: 30_000 },
   });
+  // A transient RPC rate-limit (429) is not an outage. Only treat the chain as
+  // unreachable for genuine errors, otherwise a single throttled poll would
+  // flip the whole app to "Arc offline".
+  const isArcUnreachable =
+    arcBlock.isError && !isRpcRateLimitError(arcBlock.error);
   const isArc = chainId === arcTestnet.id;
   const avatarHue = address
     ? Number.parseInt(address.slice(2, 6), 16) % 360
@@ -79,30 +85,30 @@ export function Header() {
         <div className="ml-auto flex items-center gap-2.5">
           <div
             className={`hidden items-center gap-2 rounded-full border px-3 py-1.5 sm:flex ${
-              arcBlock.isError
+              isArcUnreachable
                 ? "border-rose-300/15 bg-rose-300/[0.05]"
                 : "border-emerald-300/15 bg-emerald-300/[0.05]"
             }`}
           >
             <span className="relative flex size-2">
               <span
-                className={`absolute inline-flex size-full animate-ping-soft rounded-full ${arcBlock.isError ? "bg-rose-300" : "bg-emerald-300"}`}
+                className={`absolute inline-flex size-full animate-ping-soft rounded-full ${isArcUnreachable ? "bg-rose-300" : "bg-emerald-300"}`}
               />
               <span
-                className={`relative inline-flex size-2 rounded-full ${arcBlock.isError ? "bg-rose-300" : "bg-emerald-300"}`}
+                className={`relative inline-flex size-2 rounded-full ${isArcUnreachable ? "bg-rose-300" : "bg-emerald-300"}`}
               />
             </span>
-            {arcBlock.isError ? (
+            {isArcUnreachable ? (
               <WifiOff className="size-3 text-rose-300" />
             ) : (
               <Radio className="size-3 text-emerald-300" />
             )}
             <span
-              className={`font-mono text-[10px] font-bold uppercase tracking-[0.12em] ${arcBlock.isError ? "text-rose-200" : "text-emerald-200"}`}
+              className={`font-mono text-[10px] font-bold uppercase tracking-[0.12em] ${isArcUnreachable ? "text-rose-200" : "text-emerald-200"}`}
             >
-              {arcBlock.isError
+              {isArcUnreachable
                 ? "Arc offline"
-                : arcBlock.isLoading
+                : arcBlock.isLoading || arcBlock.isError
                   ? "Arc syncing"
                   : "Arc live"}
             </span>

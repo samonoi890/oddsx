@@ -40,12 +40,18 @@ const wagmiConfig = createConfig({
       wait: 100,
     },
   },
-  pollingInterval: 12_000,
+  pollingInterval: 30_000,
   transports: {
     [arcTestnet.id]: http(ARC_TESTNET_RPC_URL, {
-      retryCount: 1,
+      // The public Arc RPC rate-limits per HTTP request, not per JSON-RPC call
+      // (verified: 50 individual calls => mostly 429; the same calls sent as a
+      // handful of batches => all 200). Coalescing the burst the app makes on
+      // load into a few batched HTTP requests is what stops the "Arc offline"
+      // flapping. Retry with backoff absorbs any remaining transient 429s.
+      batch: { wait: 16, batchSize: 20 },
+      retryCount: 3,
       retryDelay: 1_000,
-      timeout: 10_000,
+      timeout: 15_000,
     }),
   },
   ssr: true,

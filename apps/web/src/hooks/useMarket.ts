@@ -3,10 +3,10 @@
 import { arcTestnet, getOddsXAddress, oddsXAbi } from "@oddsx/config";
 import { useCallback } from "react";
 import { type Address, type Hex } from "viem";
-import { useReadContract, useWatchContractEvent } from "wagmi";
+import { useReadContract } from "wagmi";
 
 const contractAddress = getOddsXAddress(arcTestnet.id);
-const MARKET_REFETCH_INTERVAL_MS = 12_000;
+const MARKET_REFETCH_INTERVAL_MS = 30_000;
 
 export interface MarketView {
   asset: Address;
@@ -42,30 +42,11 @@ export function useMarket(marketId: Hex) {
     void refetchSnapshot();
   }, [refetchSnapshot]);
 
-  useWatchContractEvent({
-    address: contractAddress,
-    abi: oddsXAbi,
-    eventName: "BetPlaced",
-    args: { marketId },
-    chainId: arcTestnet.id,
-    onLogs: refetch,
-  });
-  useWatchContractEvent({
-    address: contractAddress,
-    abi: oddsXAbi,
-    eventName: "MarketResolved",
-    args: { marketId },
-    chainId: arcTestnet.id,
-    onLogs: refetch,
-  });
-  useWatchContractEvent({
-    address: contractAddress,
-    abi: oddsXAbi,
-    eventName: "MarketCancelled",
-    args: { marketId },
-    chainId: arcTestnet.id,
-    onLogs: refetch,
-  });
+  // Note: pool/state changes are picked up by the periodic refetch above and by
+  // the explicit refetch() call after each confirmed action. We intentionally
+  // avoid per-market event watchers here — each one adds an independent RPC
+  // polling filter, and three of them per mounted card was a major contributor
+  // to the public Arc RPC returning 429s ("Arc offline").
 
   return {
     market: snapshot?.[0],
