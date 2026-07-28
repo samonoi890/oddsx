@@ -53,13 +53,18 @@ export function useMarketActions(marketId: Hex, onConfirmed?: () => void) {
   }, [address, chainId, isConnected]);
 
   const placeNativeBet = useCallback(
-    (outcome: number, amount: bigint) => {
+    (
+      outcome: number,
+      amount: bigint,
+      minExpectedReward: bigint,
+      deadline: bigint,
+    ) => {
       requireWriteAccess();
       writeContract({
         abi: oddsXAbi,
         address: contractAddress,
-        functionName: "placeBet",
-        args: [marketId, outcome, amount],
+        functionName: "placeBetWithBounds",
+        args: [marketId, outcome, amount, minExpectedReward, deadline],
         value: amount,
         chainId: arcTestnet.id,
       });

@@ -1,5 +1,6 @@
-const ODDSX_DEPLOYMENT_BLOCK = 53_262_846n;
-const EVENT_HISTORY_BLOCK_COUNT = 1_000n;
+export const ODDSX_DEPLOYMENT_BLOCK = 54_065_221n;
+const RECENT_EVENT_HISTORY_BLOCK_COUNT = 10_000n;
+const EVENT_PAGE_BLOCK_COUNT = 10_000n;
 export const RPC_RATE_LIMIT_RETRY_MS = 30_000;
 
 export const RPC_RATE_LIMIT_MESSAGE =
@@ -15,13 +16,33 @@ const RATE_LIMIT_MARKERS = [
 
 export function getRecentEventFromBlock(latestBlock: bigint) {
   const recentWindowStart =
-    latestBlock >= EVENT_HISTORY_BLOCK_COUNT - 1n
-      ? latestBlock - (EVENT_HISTORY_BLOCK_COUNT - 1n)
+    latestBlock >= RECENT_EVENT_HISTORY_BLOCK_COUNT - 1n
+      ? latestBlock - (RECENT_EVENT_HISTORY_BLOCK_COUNT - 1n)
       : 0n;
 
   return recentWindowStart > ODDSX_DEPLOYMENT_BLOCK
     ? recentWindowStart
     : ODDSX_DEPLOYMENT_BLOCK;
+}
+
+export async function collectEventPages<T>(
+  latestBlock: bigint,
+  loadPage: (fromBlock: bigint, toBlock: bigint) => Promise<readonly T[]>,
+  fromBlock = ODDSX_DEPLOYMENT_BLOCK,
+) {
+  if (latestBlock < fromBlock) return [] as T[];
+
+  const events: T[] = [];
+  let cursor = fromBlock;
+  while (cursor <= latestBlock) {
+    const pageEnd =
+      cursor + EVENT_PAGE_BLOCK_COUNT - 1n < latestBlock
+        ? cursor + EVENT_PAGE_BLOCK_COUNT - 1n
+        : latestBlock;
+    events.push(...(await loadPage(cursor, pageEnd)));
+    cursor = pageEnd + 1n;
+  }
+  return events;
 }
 
 function collectErrorDetails(error: unknown, depth = 0): string[] {

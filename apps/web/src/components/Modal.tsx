@@ -3,7 +3,10 @@
 
 import { AnimatePresence, motion } from "framer-motion";
 import { X } from "lucide-react";
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
+
+const FOCUSABLE_SELECTOR =
+  'button:not([disabled]), a[href], input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 interface ModalProps {
   open: boolean;
@@ -14,17 +17,49 @@ interface ModalProps {
 }
 
 export function Modal({ open, onClose, title, eyebrow, children }: ModalProps) {
+  const dialogRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
     if (!open) return;
     const previousOverflow = document.body.style.overflow;
+    const previousFocus =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
     document.body.style.overflow = "hidden";
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") onClose();
+      if (event.key !== "Tab" || !dialogRef.current) return;
+
+      const focusable = [
+        ...dialogRef.current.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR),
+      ];
+      if (focusable.length === 0) {
+        event.preventDefault();
+        dialogRef.current.focus();
+        return;
+      }
+      const first = focusable[0];
+      const last = focusable.at(-1);
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last?.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first?.focus();
+      }
     };
     window.addEventListener("keydown", handleKeyDown);
+    const focusFrame = window.requestAnimationFrame(() => {
+      dialogRef.current
+        ?.querySelector<HTMLElement>(FOCUSABLE_SELECTOR)
+        ?.focus();
+    });
     return () => {
+      window.cancelAnimationFrame(focusFrame);
       document.body.style.overflow = previousOverflow;
       window.removeEventListener("keydown", handleKeyDown);
+      previousFocus?.focus();
     };
   }, [onClose, open]);
 
@@ -41,9 +76,11 @@ export function Modal({ open, onClose, title, eyebrow, children }: ModalProps) {
           }}
         >
           <motion.div
+            ref={dialogRef}
             role="dialog"
             aria-modal="true"
             aria-labelledby="modal-title"
+            tabIndex={-1}
             className="glass-panel relative max-h-[92vh] w-full overflow-y-auto rounded-t-[28px] border-white/10 p-5 sm:max-w-xl sm:rounded-[28px] sm:p-7"
             initial={{ opacity: 0, y: 28, scale: 0.98 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}

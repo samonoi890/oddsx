@@ -13,19 +13,23 @@ The repository is a pnpm monorepo containing the Next.js trading interface, shar
 | Network          | Arc Testnet                                                                                                                    |
 | Chain ID         | `5042002`                                                                                                                      |
 | Native currency  | USDC, 18 decimals                                                                                                              |
-| OddsX contract   | [`0xA5649df055BF83505Dc41D014c18F8eD412C764C`](https://testnet.arcscan.app/address/0xA5649df055BF83505Dc41D014c18F8eD412C764C) |
+| OddsX contract   | [`0x6C9fD55355e83190363842693867826d4eCd94C5`](https://testnet.arcscan.app/address/0x6C9fD55355e83190363842693867826d4eCd94C5) |
+| Protocol admin   | `0x8010d267f4df81ff2beD3D0De1C0bC4da5CA05f5`                                                                                   |
 | RPC endpoint     | `https://rpc.testnet.arc.network`                                                                                              |
 | Block explorer   | [ArcScan Testnet](https://testnet.arcscan.app)                                                                                 |
-| Deployment block | `53262846`                                                                                                                     |
+| Deployment block | `54065221`                                                                                                                     |
 
-The frontend reads its RPC endpoint and contract address from environment variables. The values above are the current shared Arc Testnet deployment.
+The frontend reads its RPC endpoint and contract address from environment variables. The values above are the current audit-remediated Arc Testnet deployment. It was deployed with the deployer as admin, a 1.5% default fee, and zero resolution delay.
+
+The default `ETH_ABOVE_5000` native-USDC market was created at block `54065766` and expires on August 11, 2026 at 09:09:34 UTC.
 
 ## Product flow
 
-1. **Connect wallet** — connect an injected EIP-1193 wallet and switch it to Arc Testnet.
+1. **Connect wallet** — use an injected wallet, Coinbase Wallet, or configured WalletConnect connection and switch it to Arc Testnet.
 2. **Analyze odds** — inspect the live YES/NO pool distribution, reference asset chart, and estimated payout multiplier.
 3. **Cast a prediction** — choose an outcome and submit native USDC to its pool through `placeBet`.
-4. **Claim the payout** — after the oracle resolves the market, eligible winners call `claimReward` to receive their pro-rata payout.
+4. **Settle or cancel** — the designated oracle or resolver reports the outcome after the optional delay; authorized cancellers can stop an invalid market.
+5. **Claim or refund** — winners call `claimReward`; cancelled-market participants reclaim each outcome stake through `emergencyRefund`.
 
 The live BTC/ETH chart is informational. Binance supplies the reference candles and ticker stream, while the market's designated on-chain oracle remains the sole settlement authority.
 
@@ -52,13 +56,15 @@ OddsX/
 
 ```text
 Arc RPC
-  ├── getMarket + getOutcomePool ──> active market book and implied odds
+  ├── getMarketWithPools ──────────> coherent active market book and implied odds
   ├── getUserStake + previewReward ──> connected-wallet portfolio
   └── bounded contract events ──────> featured markets and activity tape
 
 Connected wallet
-  ├── placeBet(value = amount) ─────> native USDC outcome stake
+  ├── placeBetWithBounds ──────────> deadline/slippage-bounded native USDC stake
   ├── claimReward ──────────────────> resolved-market payout
+  ├── emergencyRefund ──────────────> cancelled-market stake recovery
+  ├── resolveMarket / cancelMarket ─> role-aware settlement controls
   └── createMarket ─────────────────> role-gated Arc test market
 ```
 
@@ -80,18 +86,20 @@ userReward = floor(
 )
 ```
 
-The frontend preview includes the proposed wager in both the selected outcome pool and total pool before calculating the estimated return. It safely falls back to neutral 50/50 displayed odds when both pools have zero liquidity. Estimates can change as later bets enter the market and are not guaranteed until resolution.
+The frontend preview includes the proposed wager in both the selected outcome pool and total pool before calculating the estimated return. Estimates can change as later bets enter the market and are not guaranteed until resolution.
+
+The UI treats an empty pool as **unpriced** rather than displaying a synthetic probability. Web bets use a five-minute deadline and require the execution-time expected reward to remain within 1% of the displayed estimate. These bounds protect transaction inclusion, not the final pari-mutuel payout: later bets can still change every participant's eventual return.
 
 ### Market lifecycle
 
-| State       | Meaning                                                                     |
-| ----------- | --------------------------------------------------------------------------- |
-| `None`      | The market ID has not been created. Reads revert with `MarketDoesNotExist`. |
-| `Open`      | Betting is allowed until `endTime`.                                         |
-| `Resolved`  | The oracle selected a funded winning outcome and rewards are claimable.     |
-| `Cancelled` | Trading stopped and users can recover stakes with `emergencyRefund`.        |
+| State       | Meaning                                                                                                                                                |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `None`      | The market ID has not been created. Reads revert with `MarketDoesNotExist`.                                                                            |
+| `Open`      | Betting is allowed until `endTime`.                                                                                                                    |
+| `Resolved`  | The oracle selected a funded winning outcome and rewards are claimable.                                                                                |
+| `Cancelled` | Trading stopped and users can recover stakes with `emergencyRefund`. This also occurs automatically when the objectively winning outcome has no stake. |
 
-Resolution cannot occur before the configured end time. The selected winning outcome must contain stake, which prevents division by zero in reward distribution.
+Resolution cannot occur before the configured end time plus the market's snapshotted resolution delay. If the selected winning outcome has no stake, resolution atomically changes the market to `Cancelled`, emits a dedicated event, and enables full refunds instead of selecting an incorrect funded outcome.
 
 ### Contract capabilities
 
@@ -99,6 +107,7 @@ Resolution cannot occur before the configured end time. The selected winning out
 | -------------------------------- | ------------------------------------------------------------------------------------- |
 | `createMarket`                   | Creates a unique market ID, oracle, expiry, outcome count, fee, and settlement asset. |
 | `placeBet`                       | Collects native currency or an ERC-20 stake and updates user/outcome/market pools.    |
+| `placeBetWithBounds`             | Places a bet with a deadline and minimum execution-time expected reward.              |
 | `resolveMarket`                  | Finalizes an expired market with its winning outcome.                                 |
 | `claimReward`                    | Transfers a winner's proportional distributable-pool share.                           |
 | `cancelMarket`                   | Cancels an open market under the emergency role.                                      |
@@ -106,6 +115,7 @@ Resolution cannot occur before the configured end time. The selected winning out
 | `setDefaultProtocolFee`          | Changes the fee applied to subsequently created markets.                              |
 | `withdrawProtocolFees`           | Transfers accrued fees to an authorized recipient.                                    |
 | `getMarket` / `getOutcomePool`   | Returns current market configuration, accounting, and pool liquidity.                 |
+| `getMarketWithPools`             | Returns the market and every pool from one coherent RPC snapshot.                     |
 | `getUserStake` / `previewReward` | Returns wallet-specific exposure and claimable reward previews.                       |
 
 The current web trader supports native-USDC betting. It detects non-native settlement markets and disables the native execution form instead of submitting an incompatible transaction.
@@ -130,9 +140,12 @@ Additional contract protections include:
 - immutable per-market fee snapshots;
 - duplicate market, zero-address, invalid amount, invalid outcome, and expiry validation;
 - explicit rejection of unsolicited native transfers;
+- automatic cancellation and refund availability when the reported winner has no stake;
+- optional per-market resolution-delay snapshots capped at seven days;
+- execution deadlines and minimum expected-reward bounds for protected bets;
 - Solidity custom errors for deterministic failure handling.
 
-Before production deployment, place privileged roles behind a multisig and timelock, define a dispute-capable oracle policy, allowlist settlement assets, expand invariant and fork testing, perform an independent audit, and document emergency governance procedures.
+The deployment script accepts `ODDSX_ADMIN`, allowing every initial role to be assigned directly to a multisig while a separate funded EOA broadcasts deployment. A configurable `ODDSX_RESOLUTION_DELAY` provides a timelock-ready settlement window. Before production deployment, define a dispute-capable oracle policy, allowlist settlement assets, add Arc fork invariants, perform an independent audit, and document emergency governance procedures.
 
 ## RPC rate-limit resilience
 
@@ -142,9 +155,10 @@ The public Arc RPC is intentionally treated as a constrained shared resource:
 - Viem HTTP requests use a 10-second timeout and one bounded transport retry.
 - TanStack Query keeps reads fresh for one block interval, caches inactive data for five minutes, and disables automatic window-focus refetching.
 - Compatible reads are grouped through Wagmi multicall batching.
-- Event history starts at the later of deployment block `53262846` or `latest - 999`, limiting every historical scan to 1,000 blocks.
-- Portfolio lifecycle events are fetched through one contract-log request and narrowed locally.
-- Market creation uses a one-time bounded discovery scan instead of a permanent event watcher.
+- Public activity starts at the later of deployment block `54065221` or `latest - 9,999`, keeping the live tape bounded.
+- Featured markets and wallet-filtered bet/reward history are fetched from deployment in sequential 10,000-block pages.
+- Portfolio market states are refreshed with a multicall after paginated wallet history is loaded.
+- Selected market snapshots refetch on matching lifecycle events and every 12 seconds as a fallback.
 - Live activity pauses its watcher after a rate-limit response and retries history after 30 seconds.
 - The in-memory activity tape is capped at the latest 100 deduplicated bets.
 - Raw RPC and Viem JSON errors are replaced with concise rate-limit, timeout, wallet-rejection, and network fallback messages.
@@ -155,7 +169,7 @@ These controls reduce request bursts, but a dedicated RPC provider or indexer is
 
 ### Frontend
 
-- Next.js 15 App Router
+- Next.js 16 App Router
 - React 19
 - TypeScript with strict, exact optional, unchecked-index, and unused-symbol checks
 - Tailwind CSS
@@ -169,7 +183,7 @@ These controls reduce request bursts, but a dedicated RPC provider or indexer is
 - Wagmi v2
 - Viem
 - TanStack Query
-- Injected EIP-1193 wallet connector
+- Injected EIP-1193, Coinbase Wallet, and optional WalletConnect connectors
 
 ### Smart contracts and tooling
 
@@ -183,7 +197,7 @@ These controls reduce request bursts, but a dedicated RPC provider or indexer is
 - Node.js 22 or newer
 - pnpm 10.15 or a compatible pnpm 10 release
 - Foundry with Solidity `0.8.30` support
-- An injected Web3 wallet for browser transactions
+- A browser, Coinbase, or WalletConnect-compatible wallet for transactions
 - Arc Testnet native USDC for transactions and test wagers
 
 Confirm the toolchain:
@@ -207,14 +221,15 @@ Create `apps/web/.env.local`:
 
 ```dotenv
 NEXT_PUBLIC_ARC_TESTNET_RPC_URL=https://rpc.testnet.arc.network
-NEXT_PUBLIC_ODDSX_ADDRESS_ARC_TESTNET=0xA5649df055BF83505Dc41D014c18F8eD412C764C
+NEXT_PUBLIC_ODDSX_ADDRESS_ARC_TESTNET=0x6C9fD55355e83190363842693867826d4eCd94C5
+NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID=<optional-reown-project-id>
 ```
 
 Create `packages/config/.env.local` with the same public values when running configuration tooling directly:
 
 ```dotenv
 NEXT_PUBLIC_ARC_TESTNET_RPC_URL=https://rpc.testnet.arc.network
-NEXT_PUBLIC_ODDSX_ADDRESS_ARC_TESTNET=0xA5649df055BF83505Dc41D014c18F8eD412C764C
+NEXT_PUBLIC_ODDSX_ADDRESS_ARC_TESTNET=0x6C9fD55355e83190363842693867826d4eCd94C5
 ```
 
 Never place a private key in either frontend environment file. Next.js exposes variables prefixed with `NEXT_PUBLIC_` to the browser.
@@ -241,7 +256,7 @@ pnpm build
 
 ## Contract testing
 
-Run the Foundry suite through the requested root command:
+Run the 24-test Foundry suite through the requested root command:
 
 ```bash
 pnpm test
@@ -263,6 +278,8 @@ The Foundry profile enables the optimizer with 10,000 runs, `via_ir`, 1,000 fuzz
 
    ```dotenv
    PRIVATE_KEY=<funded-arc-testnet-private-key>
+   ODDSX_ADMIN=<admin-or-multisig-address>
+   ODDSX_RESOLUTION_DELAY=0
    ```
 
 2. Keep the file private. It is consumed by `DeployOddsX.s.sol` and must never be committed or exposed to the frontend.
@@ -277,7 +294,7 @@ The Foundry profile enables the optimizer with 10,000 runs, `via_ir`, 1,000 fuzz
 
 5. Update `NEXT_PUBLIC_ODDSX_ADDRESS_ARC_TESTNET` in both frontend/config environment files, then restart or rebuild the web application.
 
-The deployment script assigns `DEFAULT_ADMIN_ROLE`, `MARKET_CREATOR_ROLE`, `RESOLVER_ROLE`, `CANCELLER_ROLE`, and `FEE_MANAGER_ROLE` to the deploying address and initializes the default protocol fee to 150 basis points.
+The deployment script assigns `DEFAULT_ADMIN_ROLE`, `MARKET_CREATOR_ROLE`, `RESOLVER_ROLE`, `CANCELLER_ROLE`, and `FEE_MANAGER_ROLE` to `ODDSX_ADMIN` (or the deploying address when omitted), initializes the default protocol fee to 150 basis points, and snapshots the configured default resolution delay into new markets.
 
 ## Workspace commands
 
@@ -322,4 +339,5 @@ The Binance REST or WebSocket endpoint may be blocked or disconnected. Trading a
 ## License
 
 No project-level license has been declared. Third-party dependencies retain their respective licenses. Add an explicit repository license before public production distribution.
+
 # oddsx

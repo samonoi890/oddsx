@@ -2,9 +2,9 @@
 "use client";
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { injected } from "@wagmi/core";
 import { useState, type ReactNode } from "react";
 import { WagmiProvider, createConfig, http } from "wagmi";
+import { coinbaseWallet, injected, walletConnect } from "wagmi/connectors";
 import {
   ARC_TESTNET_RPC_URL,
   arcTestnet,
@@ -12,9 +12,29 @@ import {
 } from "@oddsx/config";
 import { isRpcRateLimitError } from "@/lib/rpc";
 
+const walletConnectProjectId =
+  process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID?.trim();
+
 const wagmiConfig = createConfig({
   chains: supportedChains,
-  connectors: [injected()],
+  connectors: [
+    injected(),
+    coinbaseWallet({ appName: "OddsX" }),
+    ...(walletConnectProjectId
+      ? [
+          walletConnect({
+            projectId: walletConnectProjectId,
+            metadata: {
+              name: "OddsX",
+              description: "Binary prediction markets on Arc Testnet",
+              url: "https://oddsx-web-beta.vercel.app",
+              icons: [],
+            },
+            showQrModal: true,
+          }),
+        ]
+      : []),
+  ],
   batch: {
     multicall: {
       wait: 100,

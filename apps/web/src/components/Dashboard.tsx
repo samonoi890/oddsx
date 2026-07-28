@@ -151,7 +151,6 @@ export function Dashboard() {
           key={marketId}
           marketId={marketId}
           marketLabel={marketLabel}
-          bets={activity.bets}
         />
       </div>
       <NewMarketModal

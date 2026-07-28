@@ -6,6 +6,7 @@ import {
   Award,
   CircleDollarSign,
   Layers3,
+  RotateCcw,
   Target,
   Trophy,
   Wallet,
@@ -13,9 +14,9 @@ import {
 import { useCallback, useMemo } from "react";
 import type { Hex } from "viem";
 import { useAccount } from "wagmi";
-import type { ProtocolBet } from "@/hooks/useProtocolActivity";
 import { useMarket } from "@/hooks/useMarket";
 import { useMarketActions } from "@/hooks/useMarketActions";
+import { useMarketLifecycleActions } from "@/hooks/useMarketLifecycleActions";
 import { usePortfolio } from "@/hooks/usePortfolio";
 import { getSafeErrorMessage } from "@/lib/errors";
 import { formatUsdc } from "@/lib/format";
@@ -24,13 +25,12 @@ import { RPC_RATE_LIMIT_MESSAGE } from "@/lib/rpc";
 interface PortfolioProps {
   marketId: Hex;
   marketLabel: string;
-  bets: ProtocolBet[];
 }
 
-export function Portfolio({ marketId, marketLabel, bets }: PortfolioProps) {
+export function Portfolio({ marketId, marketLabel }: PortfolioProps) {
   const { address } = useAccount();
   const { market, refetch: refetchMarket } = useMarket(marketId);
-  const portfolio = usePortfolio(marketId, bets);
+  const portfolio = usePortfolio(marketId);
   const { refetch: refetchPortfolio } = portfolio;
   const handleClaimConfirmed = useCallback(() => {
     refetchPortfolio();
@@ -43,17 +43,18 @@ export function Portfolio({ marketId, marketLabel, bets }: PortfolioProps) {
     actionError,
     isCorrectChain,
   } = useMarketActions(marketId, handleClaimConfirmed);
+  const refunds = useMarketLifecycleActions(marketId, handleClaimConfirmed);
 
   const stats = useMemo(
     () => [
       {
-        label: "Total wagered",
+        label: "Recent wagered",
         value: `${formatUsdc(portfolio.totalWagered, 2)} USDC`,
         icon: CircleDollarSign,
         color: "text-cyan-300",
       },
       {
-        label: "Win rate",
+        label: "Recent win rate",
         value: `${portfolio.winRate}%`,
         icon: Target,
         color: "text-emerald-300",
@@ -65,7 +66,7 @@ export function Portfolio({ marketId, marketLabel, bets }: PortfolioProps) {
         color: "text-violet-300",
       },
       {
-        label: "Total winnings",
+        label: "Recent winnings",
         value: `${formatUsdc(portfolio.totalWinnings, 2)} USDC`,
         icon: Trophy,
         color: "text-amber-300",
@@ -90,7 +91,7 @@ export function Portfolio({ marketId, marketLabel, bets }: PortfolioProps) {
     <section id="portfolio" className="scroll-mt-24 py-12 sm:py-16">
       <div className="mb-6 flex items-end justify-between gap-4">
         <div>
-          <p className="data-label">Wallet intelligence</p>
+          <p className="data-label">Recent activity · paginated onchain</p>
           <h2 className="mt-2 font-display text-3xl font-semibold tracking-[-0.04em] text-white">
             Your edge, onchain
           </h2>
@@ -168,7 +169,37 @@ export function Portfolio({ marketId, marketLabel, bets }: PortfolioProps) {
                   </p>
                 </div>
                 <div className="flex min-w-56 items-center bg-slate-950/70 p-6">
-                  {canClaim ? (
+                  {market?.state === 3 ? (
+                    <div className="w-full space-y-2">
+                      {portfolio.yesStake > 0n ? (
+                        <button
+                          type="button"
+                          className="soft-button w-full justify-center text-emerald-200"
+                          onClick={() => refunds.claimRefund(0)}
+                          disabled={
+                            refunds.isPending || !refunds.isCorrectChain
+                          }
+                        >
+                          <RotateCcw className="size-4" /> Refund YES
+                        </button>
+                      ) : null}
+                      {portfolio.noStake > 0n ? (
+                        <button
+                          type="button"
+                          className="soft-button w-full justify-center text-rose-200"
+                          onClick={() => refunds.claimRefund(1)}
+                          disabled={
+                            refunds.isPending || !refunds.isCorrectChain
+                          }
+                        >
+                          <RotateCcw className="size-4" /> Refund NO
+                        </button>
+                      ) : null}
+                      <p className="text-[10px] leading-4 text-slate-600">
+                        Cancelled positions refund their original stake in full.
+                      </p>
+                    </div>
+                  ) : canClaim ? (
                     <button
                       type="button"
                       className="primary-button w-full shadow-yes"
@@ -202,20 +233,31 @@ export function Portfolio({ marketId, marketLabel, bets }: PortfolioProps) {
                 Claim transaction on ArcScan ↗
               </a>
             ) : null}
+            {refunds.transactionHash ? (
+              <a
+                className="block border-t border-white/[0.06] px-6 py-3 font-mono text-[10px] text-cyan-300"
+                href={`https://testnet.arcscan.app/tx/${refunds.transactionHash}`}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Refund transaction on ArcScan ↗
+              </a>
+            ) : null}
             {portfolio.isRateLimited ? (
               <p className="border-t border-amber-300/10 bg-amber-300/[0.03] px-6 py-3 text-xs text-amber-100">
                 {RPC_RATE_LIMIT_MESSAGE}
               </p>
             ) : portfolio.error ||
               actionError ||
-              (canClaim && !isCorrectChain) ? (
+              refunds.error ||
+              ((canClaim || market?.state === 3) && !isCorrectChain) ? (
               <p className="border-t border-white/[0.06] px-6 py-3 text-xs text-rose-300">
-                {canClaim && !isCorrectChain
-                  ? "Switch your wallet to Arc Testnet to claim this reward."
+                {(canClaim || market?.state === 3) && !isCorrectChain
+                  ? "Switch your wallet to Arc Testnet to claim or refund."
                   : portfolio.error
                     ? "Portfolio data is temporarily unavailable. Please try again shortly."
                     : getSafeErrorMessage(
-                        actionError,
+                        actionError ?? refunds.error,
                         "The claim transaction could not be completed. Please try again.",
                       )}
               </p>

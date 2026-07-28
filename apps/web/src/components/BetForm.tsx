@@ -12,6 +12,9 @@ import { getSafeErrorMessage } from "@/lib/errors";
 import { formatUsdc } from "@/lib/format";
 
 const MAX_UINT256 = (1n << 256n) - 1n;
+const EXECUTION_SLIPPAGE_BPS = 100n;
+const BET_DEADLINE_SECONDS = 5n * 60n;
+const NATIVE_GAS_RESERVE = 5n * 10n ** 16n;
 
 interface BetFormProps {
   marketId: Hex;
@@ -54,28 +57,31 @@ export function BetForm({
   } = useMarketActions(marketId, onConfirmed);
 
   const parsedAmount = useMemo(() => parseAmount(amount), [amount]);
-  const { potentialReturn, poolShare, multiplier } = useMemo(() => {
-    const selectedPool = outcomePools[outcome] ?? 0n;
-    const postBetTotal = totalPool + parsedAmount;
-    const postBetOutcomePool = selectedPool + parsedAmount;
-    const distributable =
-      postBetTotal - (postBetTotal * BigInt(feeBps)) / 10_000n;
-    const nextPotentialReturn =
-      parsedAmount > 0n && postBetOutcomePool > 0n
-        ? (parsedAmount * distributable) / postBetOutcomePool
-        : 0n;
-    return {
-      potentialReturn: nextPotentialReturn,
-      poolShare:
+  const { potentialReturn, minimumReturn, poolShare, multiplier } =
+    useMemo(() => {
+      const selectedPool = outcomePools[outcome] ?? 0n;
+      const postBetTotal = totalPool + parsedAmount;
+      const postBetOutcomePool = selectedPool + parsedAmount;
+      const distributable =
+        postBetTotal - (postBetTotal * BigInt(feeBps)) / 10_000n;
+      const nextPotentialReturn =
         parsedAmount > 0n && postBetOutcomePool > 0n
-          ? Number((parsedAmount * 10_000n) / postBetOutcomePool) / 100
-          : 0,
-      multiplier:
-        parsedAmount > 0n
-          ? Number((nextPotentialReturn * 100n) / parsedAmount) / 100
-          : 0,
-    };
-  }, [feeBps, outcome, outcomePools, parsedAmount, totalPool]);
+          ? (parsedAmount * distributable) / postBetOutcomePool
+          : 0n;
+      return {
+        potentialReturn: nextPotentialReturn,
+        minimumReturn:
+          (nextPotentialReturn * (10_000n - EXECUTION_SLIPPAGE_BPS)) / 10_000n,
+        poolShare:
+          parsedAmount > 0n && postBetOutcomePool > 0n
+            ? Number((parsedAmount * 10_000n) / postBetOutcomePool) / 100
+            : 0,
+        multiplier:
+          parsedAmount > 0n
+            ? Number((nextPotentialReturn * 100n) / parsedAmount) / 100
+            : 0,
+      };
+    }, [feeBps, outcome, outcomePools, parsedAmount, totalPool]);
 
   const addPreset = (addition: bigint) => {
     setAmount(formatEther(parseAmount(amount) + addition));
@@ -84,7 +90,10 @@ export function BetForm({
 
   const setMax = () => {
     if (!balance.data) return;
-    const spendable = (balance.data.value * 95n) / 100n;
+    const spendable =
+      balance.data.value > NATIVE_GAS_RESERVE
+        ? balance.data.value - NATIVE_GAS_RESERVE
+        : 0n;
     setAmount(formatEther(spendable));
     setValidationError(null);
   };
@@ -121,7 +130,9 @@ export function BetForm({
           );
         }
         setValidationError(null);
-        placeNativeBet(outcome, value);
+        const deadline =
+          BigInt(Math.floor(Date.now() / 1_000)) + BET_DEADLINE_SECONDS;
+        placeNativeBet(outcome, value, minimumReturn, deadline);
       }}
     >
       <div className="grid grid-cols-2 gap-2 rounded-2xl bg-slate-950/70 p-1.5">
@@ -193,7 +204,7 @@ export function BetForm({
             type="button"
             onClick={setMax}
             className="soft-button py-2 text-xs"
-            title="Uses 95% and reserves 5% for Arc gas"
+            title="Reserves 0.05 USDC for Arc gas"
           >
             MAX
           </button>
@@ -219,6 +230,12 @@ export function BetForm({
           <p className="mt-1 text-[10px] text-slate-500">After this order</p>
         </div>
       </div>
+
+      <p className="rounded-xl border border-cyan-300/10 bg-cyan-300/[0.035] px-3 py-2 text-[10px] leading-5 text-slate-500">
+        Execution expires after 5 minutes and reverts if the estimated return
+        falls more than 1%. Later bets can still change the final pari-mutuel
+        payout.
+      </p>
 
       <AnimatePresence>
         {validationError || actionError || (isConnected && !isCorrectChain) ? (

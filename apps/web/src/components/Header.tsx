@@ -3,18 +3,21 @@
 
 import { arcTestnet } from "@oddsx/config";
 import { motion } from "framer-motion";
-import { ChevronDown, Radio, Wallet } from "lucide-react";
+import { ChevronDown, Radio, Wallet, WifiOff } from "lucide-react";
 import Link from "next/link";
+import { useState } from "react";
 import { formatEther } from "viem";
 import {
   useAccount,
   useBalance,
+  useBlockNumber,
   useChainId,
-  useConnect,
   useDisconnect,
   useSwitchChain,
 } from "wagmi";
+import { getSafeErrorMessage } from "@/lib/errors";
 import { shortenAddress } from "@/lib/format";
+import { WalletConnectModal } from "./WalletConnectModal";
 
 const navigation = [
   ["Markets", "#markets"],
@@ -23,12 +26,19 @@ const navigation = [
 
 export function Header() {
   const { address, isConnected } = useAccount();
+  const [walletModalOpen, setWalletModalOpen] = useState(false);
   const chainId = useChainId();
-  const { connectors, connect, isPending } = useConnect();
   const { disconnect } = useDisconnect();
-  const { switchChain, isPending: isSwitching } = useSwitchChain();
+  const {
+    switchChain,
+    isPending: isSwitching,
+    error: switchError,
+  } = useSwitchChain();
   const balance = useBalance({ address, chainId: arcTestnet.id });
-  const connector = connectors[0];
+  const arcBlock = useBlockNumber({
+    chainId: arcTestnet.id,
+    query: { refetchInterval: 12_000 },
+  });
   const isArc = chainId === arcTestnet.id;
   const avatarHue = address
     ? Number.parseInt(address.slice(2, 6), 16) % 360
@@ -67,14 +77,34 @@ export function Header() {
         </nav>
 
         <div className="ml-auto flex items-center gap-2.5">
-          <div className="hidden items-center gap-2 rounded-full border border-emerald-300/15 bg-emerald-300/[0.05] px-3 py-1.5 sm:flex">
+          <div
+            className={`hidden items-center gap-2 rounded-full border px-3 py-1.5 sm:flex ${
+              arcBlock.isError
+                ? "border-rose-300/15 bg-rose-300/[0.05]"
+                : "border-emerald-300/15 bg-emerald-300/[0.05]"
+            }`}
+          >
             <span className="relative flex size-2">
-              <span className="absolute inline-flex size-full animate-ping-soft rounded-full bg-emerald-300" />
-              <span className="relative inline-flex size-2 rounded-full bg-emerald-300" />
+              <span
+                className={`absolute inline-flex size-full animate-ping-soft rounded-full ${arcBlock.isError ? "bg-rose-300" : "bg-emerald-300"}`}
+              />
+              <span
+                className={`relative inline-flex size-2 rounded-full ${arcBlock.isError ? "bg-rose-300" : "bg-emerald-300"}`}
+              />
             </span>
-            <Radio className="size-3 text-emerald-300" />
-            <span className="font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-emerald-200">
-              Arc live
+            {arcBlock.isError ? (
+              <WifiOff className="size-3 text-rose-300" />
+            ) : (
+              <Radio className="size-3 text-emerald-300" />
+            )}
+            <span
+              className={`font-mono text-[10px] font-bold uppercase tracking-[0.12em] ${arcBlock.isError ? "text-rose-200" : "text-emerald-200"}`}
+            >
+              {arcBlock.isError
+                ? "Arc offline"
+                : arcBlock.isLoading
+                  ? "Arc syncing"
+                  : "Arc live"}
             </span>
           </div>
 
@@ -126,20 +156,30 @@ export function Header() {
               whileTap={{ scale: 0.98 }}
               className="primary-button"
               type="button"
-              disabled={!connector || isPending}
-              onClick={() =>
-                connector && connect({ connector, chainId: arcTestnet.id })
-              }
+              onClick={() => setWalletModalOpen(true)}
             >
               <Wallet className="size-4" />
-              <span className="hidden sm:inline">
-                {isPending ? "Connecting…" : "Connect wallet"}
-              </span>
+              <span className="hidden sm:inline">Connect wallet</span>
               <span className="sm:hidden">Connect</span>
             </motion.button>
           )}
         </div>
       </div>
+      {switchError ? (
+        <p
+          className="border-t border-rose-300/10 bg-rose-300/[0.04] px-4 py-2 text-center text-xs text-rose-200"
+          role="alert"
+        >
+          {getSafeErrorMessage(
+            switchError,
+            "Arc Testnet could not be selected in this wallet.",
+          )}
+        </p>
+      ) : null}
+      <WalletConnectModal
+        open={walletModalOpen}
+        onClose={() => setWalletModalOpen(false)}
+      />
     </header>
   );
 }

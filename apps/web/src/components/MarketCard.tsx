@@ -14,6 +14,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Area, AreaChart, ResponsiveContainer, Tooltip, YAxis } from "recharts";
 import type { Hex } from "viem";
 import { BetModal } from "./BetModal";
+import { MarketLifecyclePanel } from "./MarketLifecyclePanel";
 import { PriceChart } from "./PriceChart";
 import { useMarket } from "@/hooks/useMarket";
 import { getSafeErrorMessage } from "@/lib/errors";
@@ -59,6 +60,7 @@ export function MarketCard({
         : Number(((outcomePools[0] ?? 0n) * 10_000n) / totalPool) / 100;
     return { yesPercent: nextYesPercent, noPercent: 100 - nextYesPercent };
   }, [outcomePools]);
+  const hasLiquidity = outcomePools.some((pool) => pool > 0n);
 
   useEffect(() => {
     setOddsHistory([]);
@@ -139,7 +141,7 @@ export function MarketCard({
                 {marketStateLabel(market.state)}
               </span>
               <span className="flex items-center gap-1 text-[10px] font-semibold text-slate-500">
-                <ShieldCheck className="size-3" /> Oracle verified
+                <ShieldCheck className="size-3" /> Designated oracle
               </span>
             </div>
             <a
@@ -198,7 +200,7 @@ export function MarketCard({
               <div className="mb-5 flex items-end justify-between">
                 <div>
                   <span className="font-mono text-4xl font-semibold text-emerald-300">
-                    {yesPercent.toFixed(0)}%
+                    {hasLiquidity ? `${yesPercent.toFixed(0)}%` : "—"}
                   </span>
                   <span className="ml-2 text-xs font-black text-emerald-300">
                     YES
@@ -206,7 +208,7 @@ export function MarketCard({
                 </div>
                 <div className="text-right">
                   <span className="font-mono text-3xl font-semibold text-rose-300">
-                    {noPercent.toFixed(0)}%
+                    {hasLiquidity ? `${noPercent.toFixed(0)}%` : "—"}
                   </span>
                   <span className="ml-2 text-xs font-black text-rose-300">
                     NO
@@ -214,67 +216,88 @@ export function MarketCard({
                 </div>
               </div>
               <div className="flex h-2 overflow-hidden rounded-full bg-slate-900">
-                <motion.div
-                  className="bg-emerald-300 shadow-yes"
-                  animate={{ width: `${yesPercent}%` }}
-                />
-                <motion.div
-                  className="bg-rose-300 shadow-no"
-                  animate={{ width: `${noPercent}%` }}
-                />
+                {hasLiquidity ? (
+                  <>
+                    <motion.div
+                      className="bg-emerald-300 shadow-yes"
+                      animate={{ width: `${yesPercent}%` }}
+                    />
+                    <motion.div
+                      className="bg-rose-300 shadow-no"
+                      animate={{ width: `${noPercent}%` }}
+                    />
+                  </>
+                ) : (
+                  <div className="w-full bg-slate-800" />
+                )}
               </div>
               <div className="mt-5 h-40" aria-label="Live session odds chart">
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart
-                    data={oddsHistory}
-                    margin={{ top: 10, right: 0, left: 0, bottom: 0 }}
-                  >
-                    <defs>
-                      <linearGradient
-                        id="yesGradient"
-                        x1="0"
-                        y1="0"
-                        x2="0"
-                        y2="1"
-                      >
-                        <stop
-                          offset="0%"
-                          stopColor="#34d399"
-                          stopOpacity={0.28}
-                        />
-                        <stop
-                          offset="100%"
-                          stopColor="#34d399"
-                          stopOpacity={0}
-                        />
-                      </linearGradient>
-                    </defs>
-                    <YAxis hide domain={[0, 100]} />
-                    <Tooltip
-                      contentStyle={{
-                        background: "#07111f",
-                        border: "1px solid rgba(255,255,255,.1)",
-                        borderRadius: 12,
-                        fontSize: 11,
-                      }}
-                      formatter={(value) => [
-                        `${Number(value).toFixed(1)}%`,
-                        "YES",
-                      ]}
-                    />
-                    <Area
-                      type="monotone"
-                      dataKey="yes"
-                      stroke="#34d399"
-                      strokeWidth={2}
-                      fill="url(#yesGradient)"
-                      isAnimationActive
-                    />
-                  </AreaChart>
-                </ResponsiveContainer>
+                {hasLiquidity ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart
+                      data={oddsHistory}
+                      margin={{ top: 10, right: 0, left: 0, bottom: 0 }}
+                    >
+                      <defs>
+                        <linearGradient
+                          id="yesGradient"
+                          x1="0"
+                          y1="0"
+                          x2="0"
+                          y2="1"
+                        >
+                          <stop
+                            offset="0%"
+                            stopColor="#34d399"
+                            stopOpacity={0.28}
+                          />
+                          <stop
+                            offset="100%"
+                            stopColor="#34d399"
+                            stopOpacity={0}
+                          />
+                        </linearGradient>
+                      </defs>
+                      <YAxis hide domain={[0, 100]} />
+                      <Tooltip
+                        contentStyle={{
+                          background: "#07111f",
+                          border: "1px solid rgba(255,255,255,.1)",
+                          borderRadius: 12,
+                          fontSize: 11,
+                        }}
+                        formatter={(value) => [
+                          `${Number(value).toFixed(1)}%`,
+                          "YES",
+                        ]}
+                      />
+                      <Area
+                        type="monotone"
+                        dataKey="yes"
+                        stroke="#34d399"
+                        strokeWidth={2}
+                        fill="url(#yesGradient)"
+                        isAnimationActive
+                      />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="grid h-full place-items-center text-center">
+                    <div>
+                      <Activity className="mx-auto size-5 text-slate-700" />
+                      <p className="mt-2 text-xs text-slate-500">
+                        Awaiting the first confirmed bet
+                      </p>
+                    </div>
+                  </div>
+                )}
               </div>
               <div className="mt-1 flex items-center justify-between text-[10px] text-slate-600">
-                <span>Live session</span>
+                <span>
+                  {hasLiquidity
+                    ? "Live session"
+                    : "No liquidity · market is unpriced"}
+                </span>
                 <span className="flex items-center gap-1">
                   <Activity className="size-3" /> Updates with pool state
                 </span>
@@ -319,7 +342,7 @@ export function MarketCard({
                   </div>
                   <div className="mt-4 flex items-end justify-between">
                     <span className="font-mono text-3xl font-semibold text-white">
-                      {item.value.toFixed(0)}¢
+                      {hasLiquidity ? `${item.value.toFixed(0)}¢` : "Unpriced"}
                     </span>
                     <span className="text-right text-[10px] text-slate-500">
                       {formatUsdc(item.pool, 2)}
@@ -342,6 +365,12 @@ export function MarketCard({
                 disabled.
               </p>
             ) : null}
+            <MarketLifecyclePanel
+              marketId={marketId}
+              market={market}
+              currentTime={currentTime ?? 0}
+              onConfirmed={refetch}
+            />
           </div>
         </div>
       </motion.article>

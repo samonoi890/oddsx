@@ -42,6 +42,33 @@ export const oddsXAbi = [
   },
   {
     type: "function",
+    name: "getMarketWithPools",
+    stateMutability: "view",
+    inputs: [{ name: "marketId", type: "bytes32" }],
+    outputs: [
+      {
+        name: "market",
+        type: "tuple",
+        components: [
+          { name: "asset", type: "address" },
+          { name: "endTime", type: "uint64" },
+          { name: "outcomesCount", type: "uint32" },
+          { name: "feeBps", type: "uint16" },
+          { name: "state", type: "uint8" },
+          { name: "oracle", type: "address" },
+          { name: "winningOutcome", type: "uint32" },
+          { name: "description", type: "string" },
+          { name: "totalPool", type: "uint256" },
+          { name: "winningPool", type: "uint256" },
+          { name: "distributablePool", type: "uint256" },
+          { name: "protocolFee", type: "uint256" },
+        ],
+      },
+      { name: "pools", type: "uint256[]" },
+    ],
+  },
+  {
+    type: "function",
     name: "getOutcomePool",
     stateMutability: "view",
     inputs: [
@@ -93,6 +120,13 @@ export const oddsXAbi = [
   },
   {
     type: "function",
+    name: "getMarketResolutionDelay",
+    stateMutability: "view",
+    inputs: [{ name: "marketId", type: "bytes32" }],
+    outputs: [{ name: "resolutionDelay", type: "uint64" }],
+  },
+  {
+    type: "function",
     name: "placeBet",
     stateMutability: "payable",
     inputs: [
@@ -101,6 +135,49 @@ export const oddsXAbi = [
       { name: "amount", type: "uint256" },
     ],
     outputs: [],
+  },
+  {
+    type: "function",
+    name: "placeBetWithBounds",
+    stateMutability: "payable",
+    inputs: [
+      { name: "marketId", type: "bytes32" },
+      { name: "outcome", type: "uint32" },
+      { name: "amount", type: "uint256" },
+      { name: "minExpectedReward", type: "uint256" },
+      { name: "deadline", type: "uint64" },
+    ],
+    outputs: [],
+  },
+  {
+    type: "function",
+    name: "resolveMarket",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "marketId", type: "bytes32" },
+      { name: "winningOutcome", type: "uint32" },
+    ],
+    outputs: [],
+  },
+  {
+    type: "function",
+    name: "cancelMarket",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "marketId", type: "bytes32" },
+      { name: "reason", type: "bytes32" },
+    ],
+    outputs: [],
+  },
+  {
+    type: "function",
+    name: "emergencyRefund",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "marketId", type: "bytes32" },
+      { name: "outcome", type: "uint32" },
+    ],
+    outputs: [{ name: "refundAmount", type: "uint256" }],
   },
   {
     type: "function",
@@ -160,6 +237,37 @@ export const oddsXAbi = [
       { name: "marketId", type: "bytes32", indexed: true },
       { name: "cancelledBy", type: "address", indexed: true },
       { name: "reason", type: "bytes32", indexed: true },
+    ],
+  },
+  {
+    type: "event",
+    name: "MarketCancelledNoWinningStake",
+    anonymous: false,
+    inputs: [
+      { name: "marketId", type: "bytes32", indexed: true },
+      { name: "reportedWinningOutcome", type: "uint32", indexed: true },
+      { name: "resolver", type: "address", indexed: true },
+      { name: "totalPool", type: "uint256", indexed: false },
+    ],
+  },
+  {
+    type: "event",
+    name: "MarketResolutionDelayConfigured",
+    anonymous: false,
+    inputs: [
+      { name: "marketId", type: "bytes32", indexed: true },
+      { name: "resolutionDelay", type: "uint64", indexed: false },
+    ],
+  },
+  {
+    type: "event",
+    name: "EmergencyRefundClaimed",
+    anonymous: false,
+    inputs: [
+      { name: "marketId", type: "bytes32", indexed: true },
+      { name: "user", type: "address", indexed: true },
+      { name: "outcome", type: "uint32", indexed: true },
+      { name: "amount", type: "uint256", indexed: false },
     ],
   },
   {

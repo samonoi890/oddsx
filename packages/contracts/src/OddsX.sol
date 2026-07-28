@@ -16,6 +16,8 @@ contract OddsX is IOddsX, AccessControl, ReentrancyGuard {
     uint256 public constant BPS_DENOMINATOR = 10_000;
     uint16 public constant MAX_PROTOCOL_FEE_BPS = 1_000;
     uint32 public constant MAX_OUTCOMES = 256;
+    uint64 public constant MAX_RESOLUTION_DELAY = 7 days;
+    bytes32 public constant ZERO_WINNING_POOL_REASON = keccak256("ZERO_WINNING_POOL");
 
     bytes32 public constant MARKET_CREATOR_ROLE = keccak256("MARKET_CREATOR_ROLE");
     bytes32 public constant RESOLVER_ROLE = keccak256("RESOLVER_ROLE");
@@ -23,11 +25,15 @@ contract OddsX is IOddsX, AccessControl, ReentrancyGuard {
     bytes32 public constant FEE_MANAGER_ROLE = keccak256("FEE_MANAGER_ROLE");
 
     uint16 public defaultProtocolFeeBps;
+    uint64 public defaultResolutionDelay;
 
     mapping(bytes32 marketId => Market market) private markets;
     mapping(bytes32 marketId => mapping(uint32 outcome => uint256 pool)) private outcomePools;
     mapping(bytes32 marketId => mapping(address user => mapping(uint32 outcome => uint256 stake))) private stakes;
     mapping(bytes32 marketId => mapping(address user => bool claimed)) private rewardClaimed;
+    mapping(bytes32 marketId => uint256 claimedRewards) private marketClaimedRewards;
+    mapping(bytes32 marketId => uint256 claimedWinningStake) private marketClaimedWinningStake;
+    mapping(bytes32 marketId => uint64 resolutionDelay) private marketResolutionDelays;
     mapping(address asset => uint256 fees) public accruedProtocolFees;
 
     event DefaultProtocolFeeUpdated(uint16 previousFeeBps, uint16 newFeeBps);
@@ -42,7 +48,10 @@ contract OddsX is IOddsX, AccessControl, ReentrancyGuard {
     error InvalidOutcomeCount(uint32 suppliedCount);
     error InvalidOutcome(uint32 outcome, uint32 outcomesCount);
     error InvalidFeeBps(uint256 suppliedFeeBps);
+    error InvalidResolutionDelay(uint256 suppliedDelay);
     error InvalidAmount();
+    error BetDeadlineExpired(uint256 deadline, uint256 currentTime);
+    error MinimumRewardNotMet(uint256 minimumExpectedReward, uint256 actualExpectedReward);
     error InvalidNativeAmount(uint256 expected, uint256 received);
     error NativeCurrencyNotAccepted();
     error MarketNotOpen(bytes32 marketId, MarketState currentState);
@@ -50,8 +59,8 @@ contract OddsX is IOddsX, AccessControl, ReentrancyGuard {
     error MarketNotCancelled(bytes32 marketId, MarketState currentState);
     error BettingPeriodEnded(bytes32 marketId, uint256 endTime, uint256 currentTime);
     error ResolutionTooEarly(bytes32 marketId, uint256 endTime, uint256 currentTime);
+    error ResolutionDelayActive(bytes32 marketId, uint256 resolutionAvailableAt, uint256 currentTime);
     error UnauthorizedResolver(address caller);
-    error WinningOutcomeHasNoStake(bytes32 marketId, uint32 winningOutcome);
     error NoWinningStake(bytes32 marketId, address user);
     error RewardAlreadyClaimed(bytes32 marketId, address user);
     error NoRefundAvailable(bytes32 marketId, address user, uint32 outcome);
@@ -60,11 +69,15 @@ contract OddsX is IOddsX, AccessControl, ReentrancyGuard {
     error InsufficientAccruedFees(address asset, uint256 requested, uint256 available);
     error DirectNativeTransferNotAllowed();
 
-    constructor(address initialAdmin, uint16 initialFeeBps) {
+    constructor(address initialAdmin, uint16 initialFeeBps, uint64 initialResolutionDelay) {
         if (initialAdmin == address(0)) revert ZeroAddress();
         if (initialFeeBps > MAX_PROTOCOL_FEE_BPS) revert InvalidFeeBps(initialFeeBps);
+        if (initialResolutionDelay > MAX_RESOLUTION_DELAY) {
+            revert InvalidResolutionDelay(initialResolutionDelay);
+        }
 
         defaultProtocolFeeBps = initialFeeBps;
+        defaultResolutionDelay = initialResolutionDelay;
         _grantRole(DEFAULT_ADMIN_ROLE, initialAdmin);
         _grantRole(MARKET_CREATOR_ROLE, initialAdmin);
         _grantRole(RESOLVER_ROLE, initialAdmin);
@@ -96,26 +109,53 @@ contract OddsX is IOddsX, AccessControl, ReentrancyGuard {
         market.state = MarketState.Open;
         market.oracle = oracleAddress;
         market.description = description;
+        marketResolutionDelays[marketId] = defaultResolutionDelay;
 
         emit MarketCreated(
             marketId, msg.sender, oracleAddress, asset, endTime, outcomesCount, marketFeeBps, description
         );
+        emit MarketResolutionDelayConfigured(marketId, defaultResolutionDelay);
     }
 
     function placeBet(bytes32 marketId, uint32 outcome, uint256 amount) external payable nonReentrant {
+        _placeBet(marketId, outcome, amount, 0, type(uint64).max);
+    }
+
+    function placeBetWithBounds(
+        bytes32 marketId,
+        uint32 outcome,
+        uint256 amount,
+        uint256 minExpectedReward,
+        uint64 deadline
+    ) external payable nonReentrant {
+        _placeBet(marketId, outcome, amount, minExpectedReward, deadline);
+    }
+
+    function _placeBet(bytes32 marketId, uint32 outcome, uint256 amount, uint256 minExpectedReward, uint64 deadline)
+        internal
+    {
         Market storage market = _getExistingMarket(marketId);
         if (market.state != MarketState.Open) revert MarketNotOpen(marketId, market.state);
         if (block.timestamp >= market.endTime) {
             revert BettingPeriodEnded(marketId, market.endTime, block.timestamp);
         }
+        if (block.timestamp > deadline) revert BetDeadlineExpired(deadline, block.timestamp);
         if (outcome >= market.outcomesCount) revert InvalidOutcome(outcome, market.outcomesCount);
         if (amount == 0) revert InvalidAmount();
+
+        uint256 updatedOutcomePool = outcomePools[marketId][outcome] + amount;
+        uint256 updatedMarketPool = market.totalPool + amount;
+        if (minExpectedReward != 0) {
+            uint256 estimatedFee = Math.mulDiv(updatedMarketPool, market.feeBps, BPS_DENOMINATOR);
+            uint256 expectedReward = Math.mulDiv(amount, updatedMarketPool - estimatedFee, updatedOutcomePool);
+            if (expectedReward < minExpectedReward) {
+                revert MinimumRewardNotMet(minExpectedReward, expectedReward);
+            }
+        }
 
         _collectStake(market.asset, msg.sender, amount);
 
         uint256 updatedUserStake = stakes[marketId][msg.sender][outcome] + amount;
-        uint256 updatedOutcomePool = outcomePools[marketId][outcome] + amount;
-        uint256 updatedMarketPool = market.totalPool + amount;
 
         stakes[marketId][msg.sender][outcome] = updatedUserStake;
         outcomePools[marketId][outcome] = updatedOutcomePool;
@@ -137,8 +177,18 @@ contract OddsX is IOddsX, AccessControl, ReentrancyGuard {
             revert InvalidOutcome(winningOutcome, market.outcomesCount);
         }
 
+        uint256 resolutionAvailableAt = uint256(market.endTime) + marketResolutionDelays[marketId];
+        if (block.timestamp < resolutionAvailableAt) {
+            revert ResolutionDelayActive(marketId, resolutionAvailableAt, block.timestamp);
+        }
+
         uint256 winningPool = outcomePools[marketId][winningOutcome];
-        if (winningPool == 0) revert WinningOutcomeHasNoStake(marketId, winningOutcome);
+        if (winningPool == 0) {
+            market.state = MarketState.Cancelled;
+            emit MarketCancelled(marketId, msg.sender, ZERO_WINNING_POOL_REASON);
+            emit MarketCancelledNoWinningStake(marketId, winningOutcome, msg.sender, market.totalPool);
+            return;
+        }
 
         uint256 protocolFee = Math.mulDiv(market.totalPool, market.feeBps, BPS_DENOMINATOR);
         uint256 distributablePool = market.totalPool - protocolFee;
@@ -164,10 +214,17 @@ contract OddsX is IOddsX, AccessControl, ReentrancyGuard {
         uint256 winningStake = stakes[marketId][msg.sender][winningOutcome];
         if (winningStake == 0) revert NoWinningStake(marketId, msg.sender);
 
-        reward = Math.mulDiv(winningStake, market.distributablePool, market.winningPool);
+        uint256 claimedWinningStake = marketClaimedWinningStake[marketId] + winningStake;
+        if (claimedWinningStake == market.winningPool) {
+            reward = market.distributablePool - marketClaimedRewards[marketId];
+        } else {
+            reward = Math.mulDiv(winningStake, market.distributablePool, market.winningPool);
+        }
 
         rewardClaimed[marketId][msg.sender] = true;
         stakes[marketId][msg.sender][winningOutcome] = 0;
+        marketClaimedWinningStake[marketId] = claimedWinningStake;
+        marketClaimedRewards[marketId] += reward;
         _transferAsset(market.asset, msg.sender, reward);
 
         emit RewardClaimed(marketId, msg.sender, winningOutcome, winningStake, reward);
@@ -205,6 +262,14 @@ contract OddsX is IOddsX, AccessControl, ReentrancyGuard {
         emit DefaultProtocolFeeUpdated(previousFeeBps, newFeeBps);
     }
 
+    function setDefaultResolutionDelay(uint64 newDelay) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (newDelay > MAX_RESOLUTION_DELAY) revert InvalidResolutionDelay(newDelay);
+
+        uint64 previousDelay = defaultResolutionDelay;
+        defaultResolutionDelay = newDelay;
+        emit DefaultResolutionDelayUpdated(previousDelay, newDelay);
+    }
+
     function withdrawProtocolFees(address asset, address recipient, uint256 amount)
         external
         onlyRole(FEE_MANAGER_ROLE)
@@ -223,6 +288,20 @@ contract OddsX is IOddsX, AccessControl, ReentrancyGuard {
 
     function getMarket(bytes32 marketId) external view returns (Market memory market) {
         market = _getExistingMarket(marketId);
+    }
+
+    function getMarketWithPools(bytes32 marketId) external view returns (Market memory market, uint256[] memory pools) {
+        market = _getExistingMarket(marketId);
+        uint32 outcomesCount = market.outcomesCount;
+        pools = new uint256[](outcomesCount);
+        for (uint32 outcome; outcome < outcomesCount; ++outcome) {
+            pools[outcome] = outcomePools[marketId][outcome];
+        }
+    }
+
+    function getMarketResolutionDelay(bytes32 marketId) external view returns (uint64 resolutionDelay) {
+        _getExistingMarket(marketId);
+        resolutionDelay = marketResolutionDelays[marketId];
     }
 
     function getOutcomePool(bytes32 marketId, uint32 outcome) external view returns (uint256 pool) {
@@ -249,7 +328,11 @@ contract OddsX is IOddsX, AccessControl, ReentrancyGuard {
         uint256 winningStake = stakes[marketId][user][market.winningOutcome];
         if (winningStake == 0) return 0;
 
-        reward = Math.mulDiv(winningStake, market.distributablePool, market.winningPool);
+        if (marketClaimedWinningStake[marketId] + winningStake == market.winningPool) {
+            reward = market.distributablePool - marketClaimedRewards[marketId];
+        } else {
+            reward = Math.mulDiv(winningStake, market.distributablePool, market.winningPool);
+        }
     }
 
     function isBettingOpen(bytes32 marketId) external view returns (bool) {

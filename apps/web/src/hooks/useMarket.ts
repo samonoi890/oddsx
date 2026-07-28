@@ -1,12 +1,12 @@
-// apps/web/src/hooks/useMarket.ts
 "use client";
 
 import { arcTestnet, getOddsXAddress, oddsXAbi } from "@oddsx/config";
-import { useCallback, useMemo } from "react";
+import { useCallback } from "react";
 import { type Address, type Hex } from "viem";
-import { useReadContract, useReadContracts } from "wagmi";
+import { useReadContract, useWatchContractEvent } from "wagmi";
 
 const contractAddress = getOddsXAddress(arcTestnet.id);
+const MARKET_REFETCH_INTERVAL_MS = 12_000;
 
 export interface MarketView {
   asset: Address;
@@ -23,59 +23,55 @@ export interface MarketView {
   protocolFee: bigint;
 }
 
+type MarketSnapshot = readonly [MarketView, readonly bigint[]];
+
 export function useMarket(marketId: Hex) {
-  const marketQuery = useReadContract({
+  const snapshotQuery = useReadContract({
     abi: oddsXAbi,
     address: contractAddress,
-    functionName: "getMarket",
+    functionName: "getMarketWithPools",
     args: [marketId],
     chainId: arcTestnet.id,
-  });
-
-  const market = marketQuery.data as MarketView | undefined;
-  const outcomesCount = market ? Number(market.outcomesCount) : 0;
-
-  const poolContracts = useMemo(
-    () =>
-      contractAddress
-        ? Array.from({ length: outcomesCount }, (_, outcome) => ({
-            abi: oddsXAbi,
-            address: contractAddress,
-            functionName: "getOutcomePool" as const,
-            args: [marketId, outcome] as const,
-            chainId: arcTestnet.id,
-          }))
-        : [],
-    [marketId, outcomesCount],
-  );
-
-  const poolsQuery = useReadContracts({
-    contracts: poolContracts,
     query: {
-      enabled: poolContracts.length > 0,
+      refetchInterval: MARKET_REFETCH_INTERVAL_MS,
     },
   });
-  const { refetch: refetchMarket } = marketQuery;
-  const { refetch: refetchPools } = poolsQuery;
-
-  const outcomePools = useMemo(
-    () =>
-      (poolsQuery.data ?? []).map((result) =>
-        result.status === "success" ? (result.result as bigint) : 0n,
-      ),
-    [poolsQuery.data],
-  );
-
+  const snapshot = snapshotQuery.data as MarketSnapshot | undefined;
+  const { refetch: refetchSnapshot } = snapshotQuery;
   const refetch = useCallback(() => {
-    void refetchMarket();
-    void refetchPools();
-  }, [refetchMarket, refetchPools]);
+    void refetchSnapshot();
+  }, [refetchSnapshot]);
+
+  useWatchContractEvent({
+    address: contractAddress,
+    abi: oddsXAbi,
+    eventName: "BetPlaced",
+    args: { marketId },
+    chainId: arcTestnet.id,
+    onLogs: refetch,
+  });
+  useWatchContractEvent({
+    address: contractAddress,
+    abi: oddsXAbi,
+    eventName: "MarketResolved",
+    args: { marketId },
+    chainId: arcTestnet.id,
+    onLogs: refetch,
+  });
+  useWatchContractEvent({
+    address: contractAddress,
+    abi: oddsXAbi,
+    eventName: "MarketCancelled",
+    args: { marketId },
+    chainId: arcTestnet.id,
+    onLogs: refetch,
+  });
 
   return {
-    market,
-    outcomePools,
-    isLoading: marketQuery.isLoading || poolsQuery.isLoading,
-    error: marketQuery.error ?? poolsQuery.error,
+    market: snapshot?.[0],
+    outcomePools: snapshot ? [...snapshot[1]] : [],
+    isLoading: snapshotQuery.isLoading,
+    error: snapshotQuery.error,
     refetch,
   };
 }

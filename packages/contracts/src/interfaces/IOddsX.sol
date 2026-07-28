@@ -58,6 +58,14 @@ interface IOddsX {
 
     event MarketCancelled(bytes32 indexed marketId, address indexed cancelledBy, bytes32 indexed reason);
 
+    event MarketCancelledNoWinningStake(
+        bytes32 indexed marketId, uint32 indexed reportedWinningOutcome, address indexed resolver, uint256 totalPool
+    );
+
+    event MarketResolutionDelayConfigured(bytes32 indexed marketId, uint64 resolutionDelay);
+
+    event DefaultResolutionDelayUpdated(uint64 previousDelay, uint64 newDelay);
+
     event RewardClaimed(
         bytes32 indexed marketId,
         address indexed user,
@@ -81,6 +89,14 @@ interface IOddsX {
 
     function placeBet(bytes32 marketId, uint32 outcome, uint256 amount) external payable;
 
+    function placeBetWithBounds(
+        bytes32 marketId,
+        uint32 outcome,
+        uint256 amount,
+        uint256 minExpectedReward,
+        uint64 deadline
+    ) external payable;
+
     function resolveMarket(bytes32 marketId, uint32 winningOutcome) external;
 
     function cancelMarket(bytes32 marketId, bytes32 reason) external;
@@ -89,11 +105,17 @@ interface IOddsX {
 
     function emergencyRefund(bytes32 marketId, uint32 outcome) external returns (uint256 refundAmount);
 
+    function setDefaultResolutionDelay(uint64 newDelay) external;
+
     function getMarket(bytes32 marketId) external view returns (Market memory market);
+
+    function getMarketWithPools(bytes32 marketId) external view returns (Market memory market, uint256[] memory pools);
 
     function getOutcomePool(bytes32 marketId, uint32 outcome) external view returns (uint256 pool);
 
     function getUserStake(bytes32 marketId, address user, uint32 outcome) external view returns (uint256 stake);
 
     function previewReward(bytes32 marketId, address user) external view returns (uint256 reward);
+
+    function getMarketResolutionDelay(bytes32 marketId) external view returns (uint64 resolutionDelay);
 }

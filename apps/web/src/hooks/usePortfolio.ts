@@ -1,4 +1,3 @@
-// apps/web/src/hooks/usePortfolio.ts
 "use client";
 
 import { arcTestnet, getOddsXAddress, oddsXAbi } from "@oddsx/config";
@@ -6,12 +5,16 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Hex } from "viem";
 import { zeroAddress } from "viem";
 import { useAccount, usePublicClient, useReadContracts } from "wagmi";
-import type { ProtocolBet } from "./useProtocolActivity";
 import {
-  getRecentEventFromBlock,
+  collectEventPages,
   getRpcErrorState,
   RPC_RATE_LIMIT_RETRY_MS,
 } from "@/lib/rpc";
+
+interface AccountBet {
+  marketId: Hex;
+  amount: bigint;
+}
 
 interface RewardRecord {
   marketId: Hex;
@@ -20,16 +23,12 @@ interface RewardRecord {
 
 const contractAddress = getOddsXAddress(arcTestnet.id);
 
-export function usePortfolio(marketId: Hex, bets: ProtocolBet[]) {
+export function usePortfolio(marketId: Hex) {
   const { address } = useAccount();
   const publicClient = usePublicClient({ chainId: arcTestnet.id });
+  const [accountBets, setAccountBets] = useState<AccountBet[]>([]);
   const [rewards, setRewards] = useState<RewardRecord[]>([]);
-  const [resolvedMarketIds, setResolvedMarketIds] = useState<Set<Hex>>(
-    new Set(),
-  );
-  const [cancelledMarketIds, setCancelledMarketIds] = useState<Set<Hex>>(
-    new Set(),
-  );
+  const [marketStates, setMarketStates] = useState<Map<Hex, number>>(new Map());
   const [historyError, setHistoryError] = useState<Error | null>(null);
   const [isRateLimited, setIsRateLimited] = useState(false);
 
@@ -61,15 +60,15 @@ export function usePortfolio(marketId: Hex, bets: ProtocolBet[]) {
         args: [marketId, account],
       },
     ],
-    query: { enabled: Boolean(address) },
+    query: { enabled: Boolean(address), refetchInterval: 12_000 },
   });
   const { refetch: refetchSelectedPosition } = selectedPosition;
 
   const loadHistory = useCallback(async () => {
     if (!publicClient || !address) {
+      setAccountBets([]);
       setRewards([]);
-      setResolvedMarketIds(new Set());
-      setCancelledMarketIds(new Set());
+      setMarketStates(new Map());
       setHistoryError(null);
       setIsRateLimited(false);
       return;
@@ -77,41 +76,64 @@ export function usePortfolio(marketId: Hex, bets: ProtocolBet[]) {
 
     try {
       const latestBlock = await publicClient.getBlockNumber();
-      const fromBlock = getRecentEventFromBlock(latestBlock);
-      const logs = await publicClient.getContractEvents({
-        address: contractAddress,
-        abi: oddsXAbi,
-        fromBlock,
-        toBlock: latestBlock,
-        strict: true,
-      });
-      const nextRewards: RewardRecord[] = [];
-      const nextResolvedMarketIds = new Set<Hex>();
-      const nextCancelledMarketIds = new Set<Hex>();
+      const [betLogs, rewardLogs] = await Promise.all([
+        collectEventPages(latestBlock, (fromBlock, toBlock) =>
+          publicClient.getContractEvents({
+            address: contractAddress,
+            abi: oddsXAbi,
+            eventName: "BetPlaced",
+            args: { bettor: address },
+            fromBlock,
+            toBlock,
+            strict: true,
+          }),
+        ),
+        collectEventPages(latestBlock, (fromBlock, toBlock) =>
+          publicClient.getContractEvents({
+            address: contractAddress,
+            abi: oddsXAbi,
+            eventName: "RewardClaimed",
+            args: { user: address },
+            fromBlock,
+            toBlock,
+            strict: true,
+          }),
+        ),
+      ]);
 
-      logs.forEach((log) => {
-        if (
-          log.eventName === "RewardClaimed" &&
-          log.args.user?.toLowerCase() === address.toLowerCase() &&
-          log.args.marketId &&
-          log.args.reward !== undefined
-        ) {
-          nextRewards.push({
-            marketId: log.args.marketId,
-            reward: log.args.reward,
-          });
-        }
-        if (log.eventName === "MarketResolved" && log.args.marketId) {
-          nextResolvedMarketIds.add(log.args.marketId);
-        }
-        if (log.eventName === "MarketCancelled" && log.args.marketId) {
-          nextCancelledMarketIds.add(log.args.marketId);
+      const nextBets = betLogs.flatMap((log) =>
+        log.args.marketId && log.args.amount !== undefined
+          ? [{ marketId: log.args.marketId, amount: log.args.amount }]
+          : [],
+      );
+      const nextRewards = rewardLogs.flatMap((log) =>
+        log.args.marketId && log.args.reward !== undefined
+          ? [{ marketId: log.args.marketId, reward: log.args.reward }]
+          : [],
+      );
+      const enteredMarketIds = [
+        ...new Set(nextBets.map((bet) => bet.marketId)),
+      ];
+      const stateResults = await publicClient.multicall({
+        allowFailure: true,
+        contracts: enteredMarketIds.map((id) => ({
+          address: contractAddress,
+          abi: oddsXAbi,
+          functionName: "getMarket" as const,
+          args: [id] as const,
+        })),
+      });
+      const nextStates = new Map<Hex, number>();
+      stateResults.forEach((result, index) => {
+        const id = enteredMarketIds[index];
+        if (id && result.status === "success") {
+          nextStates.set(id, Number(result.result.state));
         }
       });
 
+      setAccountBets(nextBets);
       setRewards(nextRewards);
-      setResolvedMarketIds(nextResolvedMarketIds);
-      setCancelledMarketIds(nextCancelledMarketIds);
+      setMarketStates(nextStates);
       setHistoryError(null);
       setIsRateLimited(false);
     } catch (caught) {
@@ -136,23 +158,10 @@ export function usePortfolio(marketId: Hex, bets: ProtocolBet[]) {
     return () => window.clearInterval(retryTimer);
   }, [historyError, loadHistory]);
 
-  const accountBets = useMemo(
-    () =>
-      address
-        ? bets.filter(
-            (bet) => bet.bettor.toLowerCase() === address.toLowerCase(),
-          )
-        : [],
-    [address, bets],
-  );
-
-  const enteredMarkets = useMemo(
-    () => new Set(accountBets.map((bet) => bet.marketId)),
-    [accountBets],
-  );
   const metrics = useMemo(() => {
-    const resolvedEnteredCount = [...enteredMarkets].filter((id) =>
-      resolvedMarketIds.has(id),
+    const enteredMarkets = new Set(accountBets.map((bet) => bet.marketId));
+    const resolvedEnteredCount = [...enteredMarkets].filter(
+      (id) => marketStates.get(id) === 2,
     ).length;
     const wonMarketCount = new Set(rewards.map((reward) => reward.marketId))
       .size;
@@ -160,20 +169,14 @@ export function usePortfolio(marketId: Hex, bets: ProtocolBet[]) {
       totalWagered: accountBets.reduce((total, bet) => total + bet.amount, 0n),
       totalWinnings: rewards.reduce((total, item) => total + item.reward, 0n),
       activePositions: [...enteredMarkets].filter(
-        (id) => !resolvedMarketIds.has(id) && !cancelledMarketIds.has(id),
+        (id) => marketStates.get(id) === 1,
       ).length,
       winRate:
         resolvedEnteredCount > 0
           ? Math.round((wonMarketCount / resolvedEnteredCount) * 100)
           : 0,
     };
-  }, [
-    accountBets,
-    cancelledMarketIds,
-    enteredMarkets,
-    resolvedMarketIds,
-    rewards,
-  ]);
+  }, [accountBets, marketStates, rewards]);
 
   const selectedMetrics = useMemo(() => {
     const resultAt = <T>(index: number, fallback: T): T => {

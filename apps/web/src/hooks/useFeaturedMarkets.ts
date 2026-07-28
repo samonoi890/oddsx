@@ -7,7 +7,7 @@ import { usePublicClient, useReadContracts } from "wagmi";
 import type { MarketView } from "./useMarket";
 import { DEFAULT_MARKET } from "@/lib/marketCatalog";
 import {
-  getRecentEventFromBlock,
+  collectEventPages,
   getRpcErrorState,
   RPC_RATE_LIMIT_RETRY_MS,
 } from "@/lib/rpc";
@@ -68,14 +68,16 @@ export function useFeaturedMarkets() {
     setIsLoading(true);
     try {
       const latestBlock = await publicClient.getBlockNumber();
-      const logs = await publicClient.getContractEvents({
-        address: contractAddress,
-        abi: oddsXAbi,
-        eventName: "MarketCreated",
-        fromBlock: getRecentEventFromBlock(latestBlock),
-        toBlock: latestBlock,
-        strict: true,
-      });
+      const logs = await collectEventPages(latestBlock, (fromBlock, toBlock) =>
+        publicClient.getContractEvents({
+          address: contractAddress,
+          abi: oddsXAbi,
+          eventName: "MarketCreated",
+          fromBlock,
+          toBlock,
+          strict: true,
+        }),
+      );
       setReferences((current) =>
         mergeReferences(
           current,
