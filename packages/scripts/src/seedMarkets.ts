@@ -184,7 +184,7 @@ async function main(): Promise<void> {
   );
 
   const contractAddress = (process.env.ODDSX_ADDRESS?.trim() ||
-    "0xA5649df055BF83505Dc41D014c18F8eD412C764C") as Address;
+    "0xeaE8F58DF7a3db3A3268BbE056E01AB3703b27c2") as Address;
   if (!isAddress(contractAddress)) {
     throw new Error(`ODDSX_ADDRESS is not a valid address: ${contractAddress}`);
   }

@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "seed": "tsx src/seedMarkets.ts"
+    "seed": "tsx src/seedMarkets.ts",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@oddsx/config": "workspace:*",
