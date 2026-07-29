@@ -168,16 +168,25 @@ contract OddsXTest is Test {
     function testUnauthorizedAccountsCannotManageMarkets() external {
         vm.startPrank(alice);
         vm.expectRevert();
-        oddsX.createMarket(
-            keccak256("UNAUTHORIZED"), "Unauthorized", uint64(block.timestamp + 1 days), 2, alice, address(0)
-        );
-        vm.expectRevert();
         oddsX.cancelMarket(MARKET_ID, keccak256("NO_AUTHORITY"));
         vm.expectRevert();
         oddsX.setDefaultResolutionDelay(1 hours);
         vm.expectRevert();
         oddsX.withdrawProtocolFees(address(token), treasury, 1);
         vm.stopPrank();
+    }
+
+    function testAnyoneCanCreateMarket() external {
+        bytes32 openMarketId = keccak256("PERMISSIONLESS_MARKET");
+        vm.prank(alice);
+        oddsX.createMarket(
+            openMarketId, "Anyone can open this market?", uint64(block.timestamp + 1 days), 2, alice, address(token)
+        );
+
+        IOddsX.Market memory market = oddsX.getMarket(openMarketId);
+        assertEq(uint256(market.state), uint256(IOddsX.MarketState.Open));
+        assertEq(market.oracle, alice);
+        assertEq(market.outcomesCount, 2);
     }
 
     function testUnauthorizedAccountCannotResolve() external {

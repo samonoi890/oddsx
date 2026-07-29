@@ -4,7 +4,7 @@ import { arcTestnet } from "./chains";
 
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as const;
 export const DEFAULT_ODDSX_ADDRESS_ARC_TESTNET =
-  "0xeaE8F58DF7a3db3A3268BbE056E01AB3703b27c2" as const;
+  "0xb120f2491a8cd5Dea585AE7614689c2dB0cFbe47" as const;
 
 const configuredArcAddress =
   process.env.NEXT_PUBLIC_ODDSX_ADDRESS_ARC_TESTNET?.trim();

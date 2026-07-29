@@ -85,6 +85,10 @@ contract OddsX is IOddsX, AccessControl, ReentrancyGuard {
         _grantRole(FEE_MANAGER_ROLE, initialAdmin);
     }
 
+    /// @notice Permissionless market creation: any account may open a market.
+    /// @dev The caller supplies the settlement oracle. Callers/traders should be
+    /// aware that whoever is set as `oracleAddress` (typically the creator) is
+    /// trusted to report the outcome; RESOLVER_ROLE holders can also resolve.
     function createMarket(
         bytes32 marketId,
         string calldata description,
@@ -92,7 +96,7 @@ contract OddsX is IOddsX, AccessControl, ReentrancyGuard {
         uint32 outcomesCount,
         address oracleAddress,
         address asset
-    ) external onlyRole(MARKET_CREATOR_ROLE) {
+    ) external {
         if (marketId == bytes32(0)) revert EmptyMarketId();
         if (markets[marketId].state != MarketState.None) revert MarketAlreadyExists(marketId);
         if (bytes(description).length == 0) revert EmptyDescription();

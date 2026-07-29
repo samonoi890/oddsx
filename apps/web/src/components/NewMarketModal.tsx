@@ -5,8 +5,7 @@ import {
   CalendarClock,
   CheckCircle2,
   FlaskConical,
-  RefreshCw,
-  ShieldAlert,
+  Gavel,
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import type { Hex } from "viem";
@@ -70,15 +69,27 @@ export function NewMarketModal({
     <Modal
       open={open}
       onClose={onClose}
-      eyebrow="Arc testnet utility"
-      title="Launch a test market"
+      eyebrow="Permissionless · Native USDC"
+      title="Create a market"
     >
       <div className="rounded-2xl border border-cyan-300/10 bg-cyan-300/[0.035] p-4">
         <div className="flex items-start gap-3">
           <FlaskConical className="mt-0.5 size-4 shrink-0 text-cyan-300" />
           <p className="text-xs leading-5 text-slate-400">
-            Creates a two-outcome native USDC market. Your connected wallet is
-            assigned as its oracle, and the contract enforces creator access.
+            Anyone can open a two-outcome (YES/NO) native USDC market. Liquidity
+            is provided by traders&apos; bets; the protocol fee is fixed by the
+            contract.
+          </p>
+        </div>
+      </div>
+
+      <div className="mt-3 rounded-2xl border border-amber-300/15 bg-amber-300/[0.05] p-4">
+        <div className="flex items-start gap-3">
+          <Gavel className="mt-0.5 size-4 shrink-0 text-amber-300" />
+          <p className="text-[11px] leading-5 text-amber-100/80">
+            You will be set as this market&apos;s <strong>oracle</strong> — the
+            wallet trusted to report the winning outcome after expiry. Traders
+            should only take positions in markets whose resolver they trust.
           </p>
         </div>
       </div>
@@ -107,6 +118,10 @@ export function NewMarketModal({
         onSubmit={(event) => {
           event.preventDefault();
           setValidationError(null);
+          if (!creation.isConnected) {
+            setValidationError("Connect your wallet to create a market.");
+            return;
+          }
           const expiryMs = new Date(expiry).getTime();
           if (!normalizedLabel) {
             setValidationError("Enter a market label.");
@@ -118,12 +133,6 @@ export function NewMarketModal({
           }
           if (!Number.isFinite(expiryMs) || expiryMs <= Date.now()) {
             setValidationError("Choose a future market expiry.");
-            return;
-          }
-          if (!creation.canCreate) {
-            setValidationError(
-              "Connect an approved market-creator wallet before continuing.",
-            );
             return;
           }
           creation.createMarket({
@@ -184,53 +193,11 @@ export function NewMarketModal({
             )}
           </p>
         ) : null}
-        {creation.roleError ? (
-          <div
-            className="rounded-xl border border-rose-400/15 bg-rose-400/[0.06] px-3 py-3 text-xs text-rose-200"
-            role="alert"
-          >
-            <p className="leading-5">
-              OddsX couldn&apos;t verify market-creator access on Arc. Check the
-              network connection, then try the role check again.
-            </p>
-            <button
-              type="button"
-              className="mt-2 inline-flex items-center gap-2 font-mono text-[10px] font-bold uppercase tracking-wider text-rose-100 transition hover:text-white"
-              onClick={() => void creation.refetchRole()}
-            >
-              <RefreshCw className="size-3" /> Check again
-            </button>
-          </div>
-        ) : null}
 
         {!creation.isConnected ? (
           <p className="text-xs text-amber-200/80">
-            Connect an approved market-creator wallet to continue.
+            Connect your wallet to continue.
           </p>
-        ) : creation.roleError ? null : creation.isCheckingRole ? (
-          <p className="text-xs text-slate-500">Checking creator role…</p>
-        ) : !creation.canCreate ? (
-          <div className="rounded-xl border border-amber-300/15 bg-amber-300/[0.05] p-3">
-            <div className="flex items-start gap-3">
-              <ShieldAlert className="mt-0.5 size-4 shrink-0 text-amber-300" />
-              <div>
-                <p className="text-xs font-semibold text-amber-100">
-                  This wallet can&apos;t create OddsX markets
-                </p>
-                <p className="mt-1 text-[11px] leading-5 text-amber-100/65">
-                  Connect a wallet with market-creator access, or ask the OddsX
-                  admin to approve this address. Then check again.
-                </p>
-                <button
-                  type="button"
-                  className="mt-2 inline-flex items-center gap-2 font-mono text-[10px] font-bold uppercase tracking-wider text-amber-200 transition hover:text-white"
-                  onClick={() => void creation.refetchRole()}
-                >
-                  <RefreshCw className="size-3" /> Check again
-                </button>
-              </div>
-            </div>
-          </div>
         ) : null}
 
         {creation.transactionHash ? (
@@ -244,7 +211,7 @@ export function NewMarketModal({
           </a>
         ) : null}
 
-        {!isArc && creation.isConnected ? (
+        {creation.isConnected && !isArc ? (
           <button
             className="primary-button w-full"
             type="button"
@@ -257,15 +224,13 @@ export function NewMarketModal({
           <button
             className="primary-button w-full"
             type="submit"
-            disabled={
-              !creation.isConnected || !creation.canCreate || creation.isPending
-            }
+            disabled={!creation.isConnected || creation.isPending}
           >
             {creation.isPending
               ? "Confirming on Arc…"
-              : creation.isConnected && !creation.canCreate
-                ? "Market creator access required"
-                : "Create test market"}
+              : !creation.isConnected
+                ? "Connect wallet to create"
+                : "Create market"}
           </button>
         )}
       </form>

@@ -3,8 +3,11 @@
 import { arcTestnet, getOddsXAddress, oddsXAbi } from "@oddsx/config";
 import { useCallback, useEffect, useRef } from "react";
 import { keccak256, stringToHex, zeroAddress, type Hex } from "viem";
-import { useWaitForTransactionReceipt, useWriteContract } from "wagmi";
-import { useMarketCreatorRole } from "./useMarketCreatorRole";
+import {
+  useAccount,
+  useWaitForTransactionReceipt,
+  useWriteContract,
+} from "wagmi";
 
 const contractAddress = getOddsXAddress(arcTestnet.id);
 
@@ -14,11 +17,12 @@ interface CreateMarketInput {
   endTime: bigint;
 }
 
+// Market creation is permissionless on-chain — any connected wallet may open a
+// market. The connected wallet is set as the market's oracle/resolver.
 export function useCreateMarket(
   onConfirmed?: (marketId: Hex, label: string) => void,
 ) {
-  const creatorRole = useMarketCreatorRole();
-  const { address } = creatorRole;
+  const { address, isConnected } = useAccount();
   const pendingMarket = useRef<{ id: Hex; label: string } | null>(null);
   const handledHash = useRef<Hex | undefined>(undefined);
   const write = useWriteContract();
@@ -45,30 +49,25 @@ export function useCreateMarket(
   const createMarket = useCallback(
     ({ label, description, endTime }: CreateMarketInput) => {
       if (!address) throw new Error("Connect a wallet to create a market.");
-      if (!creatorRole.canCreate) {
-        throw new Error("This wallet is not approved to create markets.");
-      }
       const marketId = keccak256(stringToHex(label));
       pendingMarket.current = { id: marketId, label };
       writeContract({
         address: contractAddress,
         abi: oddsXAbi,
         functionName: "createMarket",
+        // outcomesCount 2 (binary), creator as oracle, native USDC settlement.
         args: [marketId, description, endTime, 2, address, zeroAddress],
         chainId: arcTestnet.id,
       });
       return marketId;
     },
-    [address, creatorRole.canCreate, writeContract],
+    [address, writeContract],
   );
 
   return {
     createMarket,
-    isConnected: creatorRole.isConnected,
-    isCheckingRole: creatorRole.isCheckingRole,
-    canCreate: creatorRole.canCreate,
-    roleError: creatorRole.roleError,
-    refetchRole: creatorRole.refetchRole,
+    address,
+    isConnected,
     transactionHash: write.data,
     isPending: write.isPending || receipt.isLoading,
     error: write.error ?? receipt.error,
