@@ -70,8 +70,12 @@ const wagmiConfig = createConfig({
       : []),
   ],
   batch: {
+    // Aggregate eth_call reads into a single multicall3 request. A short 16ms
+    // window still coalesces the mount-time burst but shaves ~84ms of latency
+    // off first paint versus the previous 100ms debounce.
     multicall: {
-      wait: 100,
+      wait: 16,
+      batchSize: 1024,
     },
   },
   pollingInterval: 30_000,
@@ -87,9 +91,12 @@ export function Web3Provider({ children }: { children: ReactNode }) {
       new QueryClient({
         defaultOptions: {
           queries: {
-            staleTime: 12_000,
+            // Cached reads render instantly for 15s before a background
+            // revalidation; no refetch storms on window focus or remount.
+            staleTime: 15_000,
             gcTime: 5 * 60_000,
             refetchOnWindowFocus: false,
+            refetchOnMount: false,
             retry: (failureCount, error) =>
               !isRpcRateLimitError(error) && failureCount < 2,
             retryDelay: (attempt) => Math.min(1_000 * 2 ** attempt, 5_000),

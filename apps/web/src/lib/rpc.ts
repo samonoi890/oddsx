@@ -1,4 +1,8 @@
-export const ODDSX_DEPLOYMENT_BLOCK = 54_065_221n;
+// Deployment block of the current OddsX contract (0xb120…be47). Keeping this at
+// the real deploy height bounds every event scan (featured markets, portfolio,
+// activity) to a small recent window instead of ~170k blocks / ~17 getLogs
+// pages, which is the dominant cause of slow first loads.
+export const ODDSX_DEPLOYMENT_BLOCK = 54_237_008n;
 const RECENT_EVENT_HISTORY_BLOCK_COUNT = 10_000n;
 const EVENT_PAGE_BLOCK_COUNT = 10_000n;
 export const RPC_RATE_LIMIT_RETRY_MS = 30_000;

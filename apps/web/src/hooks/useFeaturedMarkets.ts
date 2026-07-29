@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Hex } from "viem";
 import { usePublicClient, useReadContracts } from "wagmi";
 import type { MarketView } from "./useMarket";
-import { DEFAULT_MARKET } from "@/lib/marketCatalog";
+import { FEATURED_MARKETS } from "@/lib/marketCatalog";
 import {
   collectEventPages,
   getRpcErrorState,
@@ -49,8 +49,8 @@ function mergeReferences(
 
 export function useFeaturedMarkets() {
   const publicClient = usePublicClient({ chainId: arcTestnet.id });
-  const [references, setReferences] = useState<MarketReference[]>([
-    DEFAULT_MARKET,
+  const [references, setReferences] = useState<MarketReference[]>(() => [
+    ...FEATURED_MARKETS,
   ]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);

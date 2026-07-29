@@ -1,5 +1,6 @@
 "use client";
 
+import { keepPreviousData } from "@tanstack/react-query";
 import { arcTestnet, getOddsXAddress, oddsXAbi } from "@oddsx/config";
 import { useCallback } from "react";
 import { type Address, type Hex } from "viem";
@@ -7,6 +8,7 @@ import { useReadContract } from "wagmi";
 
 const contractAddress = getOddsXAddress(arcTestnet.id);
 const MARKET_REFETCH_INTERVAL_MS = 30_000;
+const MARKET_STALE_TIME_MS = 15_000;
 
 export interface MarketView {
   asset: Address;
@@ -33,7 +35,12 @@ export function useMarket(marketId: Hex) {
     args: [marketId],
     chainId: arcTestnet.id,
     query: {
+      // Serve cached market data instantly on remount/navigation within the
+      // stale window (revalidating in the background), and keep the previous
+      // snapshot visible during any refetch instead of flashing a loader.
+      staleTime: MARKET_STALE_TIME_MS,
       refetchInterval: MARKET_REFETCH_INTERVAL_MS,
+      placeholderData: keepPreviousData,
     },
   });
   const snapshot = snapshotQuery.data as MarketSnapshot | undefined;
