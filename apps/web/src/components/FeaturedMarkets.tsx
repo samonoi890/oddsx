@@ -52,7 +52,7 @@ export function FeaturedMarkets({
               type="button"
               whileHover={{ y: -2 }}
               onClick={() => onSelect(id, label)}
-              className={`relative min-w-0 bg-slate-950/90 p-4 text-left transition hover:bg-slate-900/90 ${
+              className={`relative min-w-0 cursor-pointer bg-slate-950/90 p-4 text-left transition hover:bg-slate-900/90 ${
                 active ? "shadow-[inset_0_-2px_0_#67e8f9]" : ""
               }`}
             >
